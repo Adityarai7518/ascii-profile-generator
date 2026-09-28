@@ -417,6 +417,29 @@ def choose_additional():
 
         print("Please enter 1.")
 
+def choose_workflow():
+    while True:
+        print()
+        print("ASCII Profile Generator")
+        print("1. Custom Generation")
+        print("2. GitHub Profile Preset")
+        print("q. Quit")
+
+        choice = command_input(
+            "\nChoose an option (1-2, Enter = 1): "
+        )
+
+        if choice is BACK:
+            return BACK
+
+        if choice in ("", "1"):
+            return "custom"
+
+        if choice == "2":
+            return "github"
+
+        print("Please enter 1 or 2.")
+
 
 def choose_flag_theme():
     while True:
@@ -459,7 +482,7 @@ def choose_flag_theme():
         print("Please enter 1 or 2.")
 
 
-def choose_animation():
+def choose_animation(default_choice="1"):
     while True:
         print()
         print("Animation")
@@ -483,14 +506,14 @@ def choose_animation():
         print("q. Quit")
 
         choice = command_input(
-            "\nChoose an option (1-9, Enter = 1): "
+            f"\nChoose an option (1-9, Enter = {default_choice}): "
         )
 
         if choice is BACK:
             return BACK
 
         if choice == "":
-            choice = "1"
+            choice = default_choice
 
         if choice in ANIMATIONS:
             return ANIMATIONS[choice][1]
@@ -498,7 +521,7 @@ def choose_animation():
         print("Please enter a valid option.")
 
 
-def choose_loop():
+def choose_loop(default_choice="2"):
     while True:
         print()
         print("Loop Animation")
@@ -508,13 +531,16 @@ def choose_loop():
         print("q. Quit")
 
         choice = command_input(
-            "\nChoose an option (1-2, Enter = 2): "
+            f"\nChoose an option (1-2, Enter = {default_choice}): "
         )
 
         if choice is BACK:
             return BACK
 
-        if choice in ("", "2"):
+        if choice == "":
+            choice = default_choice
+
+        if choice == "2":
             return "no"
 
         if choice == "1":
@@ -523,7 +549,7 @@ def choose_loop():
         print("Please enter 1 or 2.")
 
 
-def choose_speed():
+def choose_speed(default_choice="2"):
     while True:
         print()
         print("Animation Speed")
@@ -534,14 +560,16 @@ def choose_speed():
         print("q. Quit")
 
         choice = command_input(
-            "\nChoose an option (1-3, Enter = 2): "
+            f"\nChoose an option (1-3, Enter = {default_choice}): "
         )
 
         if choice is BACK:
             return BACK
 
+        if choice == "":
+            choice = default_choice
+
         mapping = {
-            "": "normal",
             "1": "slow",
             "2": "normal",
             "3": "fast",
@@ -553,12 +581,12 @@ def choose_speed():
         print("Please enter 1, 2 or 3.")
 
 
-def choose_dimensions():
+def choose_dimensions(def_cols=DEFAULT_COLS, def_rows=DEFAULT_ROWS):
     while True:
         print()
         print(
             f"ASCII Dimensions\n"
-            f"1. Default: {DEFAULT_COLS} × {DEFAULT_ROWS}\n"
+            f"1. Default: {def_cols} × {def_rows}\n"
             "2. Custom\n"
             "b. Back\n"
             "q. Quit"
@@ -572,7 +600,7 @@ def choose_dimensions():
             return BACK
 
         if choice in ("", "1"):
-            return DEFAULT_COLS, DEFAULT_ROWS
+            return def_cols, def_rows
 
         if choice != "2":
             print("Please enter 1 or 2.")
@@ -633,12 +661,12 @@ def choose_dimensions():
             return cols, rows
 
 
-def choose_character_size():
+def choose_character_size(def_w=DEFAULT_CELL_W, def_h=DEFAULT_CELL_H):
     while True:
         print()
         print(
             f"Character Size\n"
-            f"1. Default: {DEFAULT_CELL_W} × {DEFAULT_CELL_H}\n"
+            f"1. Default: {def_w} × {def_h}\n"
             "2. Custom\n"
             "b. Back\n"
             "q. Quit"
@@ -652,7 +680,7 @@ def choose_character_size():
             return BACK
 
         if choice in ("", "1"):
-            return DEFAULT_CELL_W, DEFAULT_CELL_H
+            return def_w, def_h
 
         if choice != "2":
             print("Please enter 1 or 2.")
@@ -705,12 +733,12 @@ def choose_character_size():
             return width, height
 
 
-def choose_ramp():
+def choose_ramp(def_ramp=DEFAULT_RAMP):
     while True:
         print()
         print(
             f'Character Density\n'
-            f'1. Default: "{DEFAULT_RAMP}"\n'
+            f'1. Default: "{def_ramp}"\n'
             "2. Custom\n"
             "b. Back\n"
             "q. Quit"
@@ -727,7 +755,7 @@ def choose_ramp():
             return BACK
 
         if choice in ("", "1"):
-            return DEFAULT_RAMP
+            return def_ramp
 
         if choice != "2":
             print("Please enter 1 or 2.")
@@ -871,32 +899,26 @@ def run_stages(
     return values
 
 
-SHARED_STAGES = [
-    ("dimensions", choose_dimensions),
-    ("character_size", choose_character_size),
-    ("ramp", choose_ramp),
-    (
-        "contrast",
-        lambda: choose_number(
-            "Contrast",
-            DEFAULT_CONTRAST,
-        ),
-    ),
-    (
-        "brightness",
-        lambda: choose_number(
-            "Brightness",
-            DEFAULT_BRIGHTNESS,
-        ),
-    ),
-    (
-        "gamma",
-        lambda: choose_number(
-            "Gamma",
-            DEFAULT_GAMMA,
-        ),
-    ),
-]
+def build_shared_stages(preset="standard"):
+    if preset == "github":
+        def_cols, def_rows = 100, 50
+        def_cw, def_ch = 8, 15
+        def_ramp = DEFAULT_RAMP
+        def_con, def_bri, def_gam = 1.10, 1.00, 1.00
+    else:
+        def_cols, def_rows = DEFAULT_COLS, DEFAULT_ROWS
+        def_cw, def_ch = DEFAULT_CELL_W, DEFAULT_CELL_H
+        def_ramp = DEFAULT_RAMP
+        def_con, def_bri, def_gam = DEFAULT_CONTRAST, DEFAULT_BRIGHTNESS, DEFAULT_GAMMA
+
+    return [
+        ("dimensions", lambda: choose_dimensions(def_cols, def_rows)),
+        ("character_size", lambda: choose_character_size(def_cw, def_ch)),
+        ("ramp", lambda: choose_ramp(def_ramp)),
+        ("contrast", lambda: choose_number("Contrast", def_con)),
+        ("brightness", lambda: choose_number("Brightness", def_bri)),
+        ("gamma", lambda: choose_number("Gamma", def_gam)),
+    ]
 
 
 
@@ -1006,7 +1028,12 @@ def choose_background(title="Background"):
         print("Please enter a valid option.")
 
 
-def choose_output_format():
+        if choice == "4":
+            return "gif"
+
+        print("Please enter 1, 2, 3 or 4.")
+
+def choose_output_format(default_choice="1"):
     while True:
         print()
         print("Output Format")
@@ -1018,13 +1045,16 @@ def choose_output_format():
         print("q. Quit")
 
         choice = command_input(
-            "\nChoose an option (1-4, Enter = 1): "
+            f"\nChoose an option (1-4, Enter = {default_choice}): "
         )
 
         if choice is BACK:
             return BACK
 
-        if choice in ("", "1"):
+        if choice == "":
+            choice = default_choice
+
+        if choice == "1":
             return "svg"
 
         if choice == "2":
@@ -1039,21 +1069,32 @@ def choose_output_format():
         print("Please enter 1, 2, 3 or 4.")
 
 
-def build_normal_stages():
+def build_normal_stages(preset="standard"):
+    if preset == "github":
+        anim_def = "7" # Twinkle
+        loop_def = "1" # Yes
+        speed_def = "2" # Normal
+        fmt_def = "1"  # SVG
+    else:
+        anim_def = "1"
+        loop_def = "2"
+        speed_def = "2"
+        fmt_def = "1"
+
     return [
-        ("animation", choose_animation),
-        ("loop", choose_loop),
-        ("speed", choose_speed),
-        *SHARED_STAGES,
-        ("output_format", choose_output_format),
+        ("animation", lambda: choose_animation(anim_def)),
+        ("loop", lambda: choose_loop(loop_def)),
+        ("speed", lambda: choose_speed(speed_def)),
+        *build_shared_stages(preset),
+        ("output_format", lambda: choose_output_format(fmt_def)),
     ]
 
 
 def build_flag_stages():
     return [
-        ("speed", choose_speed),
-        *SHARED_STAGES,
-        ("output_format", choose_output_format),
+        ("speed", lambda: choose_speed("2")),
+        *build_shared_stages(),
+        ("output_format", lambda: choose_output_format("1")),
     ]
 
 
@@ -1300,6 +1341,105 @@ def run_normal(image, color):
         return None
 
 
+def run_preset(image):
+    values = {
+        "color": {
+            "mode": "original",
+            "background": None, # Transparent fallback to source/SVG defaults
+            "foreground": "#111111",
+            "palette": [],
+            "palette_name": "",
+        },
+        "animation": "twinkle",
+        "loop": "yes",
+        "speed": "normal",
+        "dimensions": (100, 50),
+        "character_size": (8, 15),
+        "ramp": DEFAULT_RAMP,
+        "contrast": DEFAULT_CONTRAST,
+        "brightness": DEFAULT_BRIGHTNESS,
+        "gamma": DEFAULT_GAMMA,
+        "output_format": "svg",
+    }
+
+    stages = build_normal_stages(preset="github")
+
+    while True:
+        print_configuration(values)
+
+        confirm = command_input(
+            "Generate with these GitHub Profile settings? [Y/n/edit]: "
+        )
+
+        if confirm is BACK:
+            return BACK
+
+        if confirm.lower() in ("e", "edit"):
+            while True:
+                color = choose_color_mode()
+
+                if color is BACK:
+                    break
+
+                if color is ADDITIONAL:
+                    while True:
+                        additional = choose_additional()
+                        if additional is BACK:
+                            break
+                        if additional == "flag":
+                            while True:
+                                flag_theme = choose_flag_theme()
+                                if flag_theme is BACK_TO_FLAG_THEME:
+                                    break
+                                result = run_flag(image, flag_theme)
+                                if result is BACK_TO_FLAG_THEME:
+                                    continue
+                                return None
+                    continue
+
+                values["color"] = color
+                edited = run_stages(
+                    stages,
+                    values,
+                    BACK,
+                    0,
+                )
+
+                if edited is BACK:
+                    continue
+
+                values = edited
+
+                if values.get("animation") == "instant":
+                    values["loop"] = "no"
+                    values["speed"] = "normal"
+
+                break
+
+            continue
+
+        if confirm.lower() == "n":
+            edited = run_stages(
+                stages,
+                values,
+                BACK,
+                len(stages) - 1,
+            )
+
+            if edited is BACK:
+                continue
+
+            values = edited
+            continue
+
+        if confirm.lower() in ("", "y", "yes"):
+            generate(image, values)
+        else:
+            print("Generation cancelled.")
+
+        return None
+
+
 def run_flag(image, flag_theme):
     values = {
         "color": flag_theme,
@@ -1409,46 +1549,58 @@ def main():
         raise SystemExit(1)
 
     while True:
-        color = choose_color_mode()
+        workflow = choose_workflow()
 
-        if color is BACK:
+        if workflow is BACK:
             return
 
-        if color is ADDITIONAL:
-            while True:
-                additional = choose_additional()
+        if workflow == "github":
+            result = run_preset(image)
+            if result is BACK:
+                continue
+            return
 
-                if additional is BACK:
-                    break
+        while True:
+            color = choose_color_mode()
 
-                if additional == "flag":
-                    while True:
-                        flag_theme = choose_flag_theme()
+            if color is BACK:
+                break
 
-                        if flag_theme is BACK_TO_FLAG_THEME:
-                            break
+            if color is ADDITIONAL:
+                while True:
+                    additional = choose_additional()
 
-                        result = run_flag(
-                            image,
-                            flag_theme,
-                        )
+                    if additional is BACK:
+                        break
 
-                        if result is BACK_TO_FLAG_THEME:
-                            continue
+                    if additional == "flag":
+                        while True:
+                            flag_theme = choose_flag_theme()
 
-                        return
+                            if flag_theme is BACK_TO_FLAG_THEME:
+                                break
 
-            continue
+                            result = run_flag(
+                                image,
+                                flag_theme,
+                            )
 
-        result = run_normal(
-            image,
-            color,
-        )
+                            if result is BACK_TO_FLAG_THEME:
+                                continue
 
-        if result is BACK:
-            continue
+                            return
 
-        return
+                continue
+
+            result = run_normal(
+                image,
+                color,
+            )
+
+            if result is BACK:
+                continue
+
+            return
 
 
 if __name__ == "__main__":

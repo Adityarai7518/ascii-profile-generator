@@ -102,9 +102,26 @@ ascii-profile-generator/
 
 Generated files such as `avi-ascii.svg`, `avi-ascii.png`, `avi-ascii.jpg`, and `avi-ascii.gif` stay local and are ignored by Git.
 
+## GitHub Profile Preset
+
+The CLI now includes a **GitHub Profile** preset that configures the generator specifically for creating ASCII artwork suitable for a GitHub profile README.
+
+**What it does:**
+It automatically pre-fills the configuration with sensible defaults designed for GitHub's Markdown interface and steps you directly to the generation prompt.
+
+**Default Starting Settings:**
+* **Theme/Color:** Original source colours with a Transparent background
+* **Animation:** Twinkle
+* **Loop:** Yes
+* **Dimensions:** 100 × 50 columns/rows (a README-oriented starting size that can be customized)
+* **Output Format:** SVG (scalable, animated, and lightweight)
+
+**Customization:**
+The preset does NOT permanently override your normal defaults; it only provides starting values for the current generation. You are entirely free to customize these settings afterward. If you want to change the format to PNG, resize the grid, or use a different theme, simply press `e` (edit) at the confirmation prompt to step backwards and adjust the configuration.
+
 ## GitHub profile picture
 
-For a GitHub profile picture, PNG or JPEG is the most practical output. The project generates the image locally; it does not change your account automatically.
+For a GitHub profile picture (the avatar in your account settings), PNG or JPEG is the most practical output. The project generates the image locally; it does not change your account automatically.
 
 ## License
 
