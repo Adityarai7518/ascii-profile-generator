@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://Adityarai7518.github.io/ascii-profile-generator/sitemap.xml

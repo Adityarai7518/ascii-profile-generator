@@ -1,6 +1,6 @@
 # ASCII Profile Generator
 
-Turn a normal image into ASCII art and export it as SVG, PNG, JPEG, or GIF.
+Export ASCII art as script-free animated SVG, PNG, JPEG, or GIF.
 
 The goal is simple: install Python, run the setup, choose your settings, and get the file you asked for.
 
@@ -51,10 +51,10 @@ Background
 ## Output Format
 
 ```text
-1. SVG  - vector, preserves animation and selected background
-2. PNG  - best general-purpose image
-3. JPEG - smaller, solid background
-4. GIF  - animated image
+1. SVG  - Script-free animated vector output
+2. PNG  - Static raster image output
+3. JPEG - Static raster image output
+4. GIF  - Animated raster image output
 ```
 
 The format is selected during the same configuration flow. The program does not create an extra export stage and does not generate unused formats.
