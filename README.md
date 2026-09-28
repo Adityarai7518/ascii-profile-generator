@@ -1,318 +1,111 @@
 # ASCII Profile Generator
 
-Turn your photos into customizable ASCII-art portraits with color modes, palettes, and animated SVG effects.
+Turn a normal image into ASCII art and export it as SVG, PNG, JPEG, or GIF.
 
-The generator runs from the terminal and produces a standalone SVG file that can be opened directly in a browser.
+The goal is simple: install Python, run the setup, choose your settings, and get the file you asked for.
 
-## Features
+## Try it
 
-* Convert photos into ASCII art
-* Adjustable ASCII dimensions
-* Adjustable character size
-* Custom ASCII character density ramp
-* Contrast, brightness, and gamma controls
-* Original image colors with transparency
-* Light mode
-* Dark mode
-* Custom foreground/background colors
-* Multicolour palettes
-* Custom HEX colors
-* Animated SVG output
-* Multiple animation styles
-* Looping or one-time animations
-* Slow, normal, and fast animation speeds
-* Flag mode with fabric-style waving animation
-* iPhone photo orientation handling through EXIF data
+A sample image is included so you can test the project immediately.
 
-## Available Color Modes
-
-### Original
-
-Preserves the source image's colors and transparency.
-
-### Light
-
-White background with dark ASCII characters.
-
-### Dark
-
-Dark background with light ASCII characters.
-
-### Custom
-
-Choose your own foreground and background colors.
-
-### Multicolour
-
-Apply a color palette based on the image's luminance.
-
-Available palettes include:
-
-* Rainbow
-* Sunset
-* Ocean
-* Forest
-* Diwali
-* Custom
-
-## Available Animations
-
-1. Row Reveal
-2. Column Reveal
-3. Diagonal Reveal
-4. Iris Aperture
-5. Circular Reveal
-6. Fade In
-7. Twinkle
-8. Sparkle Wave
-9. Instant
-
-Additional Flag mode provides a fabric-style waving animation.
-
-## Requirements
-
-* Python 3
-* Pillow
-* macOS, Linux, or Windows
-
-## Installation
-
-### 1. Clone the repository
+### macOS / Linux
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/ascii-profile-generator.git
-cd ascii-profile-generator
-```
-
-Replace `YOUR_USERNAME` with your GitHub username.
-
-### 2. Create a virtual environment
-
-#### macOS / Linux
-
-```bash
-python3 -m venv .venv
-```
-
-Activate it:
-
-```bash
-source .venv/bin/activate
-```
-
-#### Windows
-
-```powershell
-py -m venv .venv
-```
-
-Activate it:
-
-```powershell
-.venv\Scripts\activate
-```
-
-### 3. Install dependencies
-
-```bash
-pip install -r requirements.txt
-```
-
-## Usage
-
-Place the image you want to convert inside the project directory.
-
-For example:
-
-```text
-ascii-profile-generator/
-├── ascii_generator.py
-├── my-photo.png
-└── ...
-```
-
-Then run:
-
-```bash
-python ascii_generator.py my-photo.png
-```
-
-The program will guide you through the available settings.
-
-The generated file will be:
-
-```text
-avi-ascii.svg
-```
-
-Open it in your browser.
-
-### macOS
-
-```bash
-open avi-ascii.svg
-```
-
-### Linux
-
-```bash
-xdg-open avi-ascii.svg
+python3 setup.py
+python3 ascii_generator.py sample.png
 ```
 
 ### Windows
 
-```powershell
-start avi-ascii.svg
+```text
+py setup.py
+py ascii_generator.py sample.png
 ```
 
-## Configuration
+`setup.py` creates the virtual environment and installs the only Python dependency automatically.
 
-The interactive generator lets you configure:
-
-### ASCII dimensions
-
-Default:
+## Color & Theme
 
 ```text
-120 × 64
+1. Original    - preserve source colours
+2. Light       - white background + black ASCII
+3. Dark        - black background + white ASCII
+4. Custom      - choose foreground + background
+5. Multicolour - choose palette + background
+6. Additional
 ```
 
-Allowed range:
+When `Original` is selected:
 
 ```text
-Columns: 20–300
-Rows:    10–200
+Background
+1. Preserve Transparent (if available)
+2. Original
+3. White
+4. Black
+5. Custom HEX
 ```
 
-Maximum:
+`Original` is the default. It does not force a new background. `Preserve Transparent (if available)` explicitly keeps transparent areas when the source provides them.
+
+## Output Format
 
 ```text
-50,000 cells
+1. SVG  - vector, preserves animation and selected background
+2. PNG  - best general-purpose image
+3. JPEG - smaller, solid background
+4. GIF  - animated image
 ```
 
-### Character size
+The format is selected during the same configuration flow. The program does not create an extra export stage and does not generate unused formats.
 
-Default:
+## Animations
 
-```text
-8 × 15
-```
+Normal animations:
 
-Allowed range:
+- Row Reveal
+- Column Reveal
+- Diagonal Reveal
+- Iris Aperture
+- Circular Reveal
+- Fade In
+- Twinkle
+- Sparkle Wave
+- Instant
 
-```text
-Width:  3–30
-Height: 5–40
-```
+Flag mode is available under `Additional`.
 
-### Character density
+## Sample
 
-The default ramp is:
+`sample.png` is included as a quick example image.
 
-```text
- .,:;irsXA253hMHGS#9B&@
-```
+`demo.gif` is included so visitors can see the idea immediately.
 
-You can also provide your own character ramp.
+![ASCII Profile Generator demo](demo.gif)
 
-### Image adjustments
+## Project structure
 
-You can control:
-
-* Contrast
-* Brightness
-* Gamma
-
-## Animation Controls
-
-Animated modes support:
-
-```text
-Slow
-Normal
-Fast
-```
-
-and:
-
-```text
-Loop: Yes / No
-```
-
-`Instant` does not require animation speed or loop selection.
-
-Flag mode automatically uses continuous animation.
-
-## Output
-
-The generator creates an SVG rather than a raster image.
-
-This means the output can be opened directly in a modern web browser and retains the animated SVG effects.
-
-## Development
-
-Clone the repository and create the development environment:
-
-```bash
-git clone https://github.com/YOUR_USERNAME/ascii-profile-generator.git
-cd ascii-profile-generator
-
-python3 -m venv .venv
-source .venv/bin/activate
-
-pip install -r requirements.txt
-```
-
-Check the Python files:
-
-```bash
-python -m py_compile \
-    ascii_generator.py \
-    scripts/ascii_renderer.py \
-    setup.py
-```
-
-Run the generator:
-
-```bash
-python ascii_generator.py my-photo.png
-```
-
-## Project Structure
+Everything needed for the repository lives in the root directory:
 
 ```text
 ascii-profile-generator/
-│
 ├── ascii_generator.py
-│   └── Interactive terminal interface
-│
-├── scripts/
-│   └── ascii_renderer.py
-│       └── Image processing and SVG rendering
-│
+├── ascii_renderer.py
+├── exporter.py
 ├── setup.py
-│   └── Project packaging metadata
-│
 ├── requirements.txt
-│   └── Python dependencies
-│
 ├── README.md
-│   └── Documentation
-│
 ├── LICENSE
-│   └── Project license
-│
-└── .gitignore
-    └── Files excluded from Git
+├── sample.png
+└── demo.gif
 ```
 
-## Notes
+Generated files such as `avi-ascii.svg`, `avi-ascii.png`, `avi-ascii.jpg`, and `avi-ascii.gif` stay local and are ignored by Git.
 
-Generated SVG files and local input images are intentionally excluded from Git.
+## GitHub profile picture
 
-For best results, use a reasonably clear image with good contrast.
+For a GitHub profile picture, PNG or JPEG is the most practical output. The project generates the image locally; it does not change your account automatically.
 
 ## License
 
-This project is licensed under the MIT License. See `LICENSE` for details.
-
+See [LICENSE](LICENSE).

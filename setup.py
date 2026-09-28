@@ -1,7 +1,6 @@
 import os
 import platform
 import subprocess
-import sys
 import venv
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
@@ -22,6 +21,7 @@ def main():
         venv.create(VENV_DIR, with_pip=True)
 
     print("Installing required packages...")
+
     subprocess.check_call([
         PYTHON,
         "-m",
@@ -33,7 +33,13 @@ def main():
 
     print()
     print("Setup complete.")
-    print("Run: python ascii_generator.py my-photo.png")
+    print()
+
+    if platform.system() == "Windows":
+        print("Run: py ascii_generator.py sample.png")
+    else:
+        print("Run: python3 ascii_generator.py sample.png")
+
 
 if __name__ == "__main__":
     main()

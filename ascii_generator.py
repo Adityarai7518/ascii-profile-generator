@@ -5,8 +5,12 @@ import sys
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
 VENV_DIR = os.path.join(ROOT, ".venv")
-SCRIPT = os.path.join(ROOT, "scripts", "ascii_renderer.py")
-OUTPUT = os.path.join(ROOT, "avi-ascii.svg")
+SCRIPT = os.path.join(ROOT, "ascii_renderer.py")
+EXPORTER = os.path.join(ROOT, "exporter.py")
+SVG_OUTPUT = os.path.join(ROOT, "avi-ascii.svg")
+PNG_OUTPUT = os.path.join(ROOT, "avi-ascii.png")
+JPEG_OUTPUT = os.path.join(ROOT, "avi-ascii.jpg")
+GIF_OUTPUT = os.path.join(ROOT, "avi-ascii.gif")
 
 DEFAULT_COLS, DEFAULT_ROWS = 120, 64
 DEFAULT_CELL_W, DEFAULT_CELL_H = 8, 15
@@ -282,7 +286,7 @@ def choose_color_mode():
     while True:
         print()
         print("Color & Theme")
-        print("1. Original    - preserve source colours + transparency")
+        print("1. Original    - preserve source colours")
         print("2. Light       - white background + black ASCII")
         print("3. Dark        - black background + white ASCII")
         print("4. Custom      - choose foreground + background")
@@ -299,9 +303,16 @@ def choose_color_mode():
             return BACK
 
         if choice in ("", "1"):
+            background = choose_background(
+                "Background"
+            )
+
+            if background is BACK:
+                continue
+
             return {
                 "mode": "original",
-                "background": None,
+                "background": background,
                 "foreground": "#111111",
                 "palette": [],
                 "palette_name": "",
@@ -412,7 +423,7 @@ def choose_flag_theme():
         print()
         print("Flag Colours")
         print(
-            "1. Original Colour - preserve source colours + transparency"
+            "1. Original Colour - preserve source colours"
         )
         print(
             "2. Black & White   - white background + black ASCII"
@@ -888,21 +899,6 @@ SHARED_STAGES = [
 ]
 
 
-def build_normal_stages():
-    return [
-        ("animation", choose_animation),
-        ("loop", choose_loop),
-        ("speed", choose_speed),
-        *SHARED_STAGES,
-    ]
-
-
-def build_flag_stages():
-    return [
-        ("speed", choose_speed),
-        *SHARED_STAGES,
-    ]
-
 
 def print_configuration(values, flag=False):
     color = values["color"]
@@ -916,11 +912,11 @@ def print_configuration(values, flag=False):
     print(f"Color:       {color['mode']}")
 
     if color["background"] is None:
-        print("Background:  preserve image")
+        print("Background:  transparent")
+    elif color["background"] == "original":
+        print("Background:  original")
     else:
-        print(
-            f"Background:  {color['background']}"
-        )
+        print(f"Background:  {color['background']}")
 
     if color["mode"] == "original":
         print("Foreground:  sampled from image")
@@ -951,19 +947,130 @@ def print_configuration(values, flag=False):
     print(f"Characters:  {values['ramp']}")
     print(f"Contrast:    {values['contrast']}")
     print(f"Brightness:  {values['brightness']}")
-    print(f"Gamma:       {values['gamma']}")
+    print(f"Gamma:        {values['gamma']}")
+    print(f"Format:      {values['output_format'].upper()}")
     print("----------------------------------------")
 
 
-def generate(image, values):
+def choose_background(title="Background"):
+    while True:
+        print()
+        print(title)
+        print("1. Preserve Transparent (if available)")
+        print("2. Original")
+        print("3. White")
+        print("4. Black")
+        print("5. Custom HEX")
+        print("b. Back")
+        print("q. Quit")
+
+        choice = command_input(
+            "\nChoose an option (1-5, Enter = 2): "
+        )
+
+        if choice is BACK:
+            return BACK
+
+        if choice == "1":
+            return None
+
+        if choice in ("", "2"):
+            return "original"
+
+        if choice == "3":
+            return "#ffffff"
+
+        if choice == "4":
+            return "#000000"
+
+        if choice == "5":
+            while True:
+                value = command_input(
+                    "Enter HEX background "
+                    "(example: #f5f5f5): "
+                )
+
+                if value is BACK:
+                    break
+
+                if valid_hex(value):
+                    return value.lower()
+
+                print(
+                    "Invalid HEX color. "
+                    "Use #RRGGBB."
+                )
+
+            continue
+
+        print("Please enter a valid option.")
+
+
+def choose_output_format():
+    while True:
+        print()
+        print("Output Format")
+        print("1. SVG  - vector, preserves animation and selected background")
+        print("2. PNG  - best general-purpose image")
+        print("3. JPEG - smaller, solid background")
+        print("4. GIF  - animated image")
+        print("b. Back")
+        print("q. Quit")
+
+        choice = command_input(
+            "\nChoose an option (1-4, Enter = 1): "
+        )
+
+        if choice is BACK:
+            return BACK
+
+        if choice in ("", "1"):
+            return "svg"
+
+        if choice == "2":
+            return "png"
+
+        if choice == "3":
+            return "jpeg"
+
+        if choice == "4":
+            return "gif"
+
+        print("Please enter 1, 2, 3 or 4.")
+
+
+def build_normal_stages():
+    return [
+        ("animation", choose_animation),
+        ("loop", choose_loop),
+        ("speed", choose_speed),
+        *SHARED_STAGES,
+        ("output_format", choose_output_format),
+    ]
+
+
+def build_flag_stages():
+    return [
+        ("speed", choose_speed),
+        *SHARED_STAGES,
+        ("output_format", choose_output_format),
+    ]
+
+
+def renderer_command(
+    image,
+    output_path,
+    values,
+):
     color = values["color"]
     cols, rows = values["dimensions"]
     cell_w, cell_h = values["character_size"]
 
+    background_value = color["background"]
     background = (
-        color["background"]
-        if color["background"] is not None
-        else "none"
+        "none"
+        if background_value is None
+        else background_value
     )
 
     palette = (
@@ -974,13 +1081,17 @@ def generate(image, values):
 
     animation = values["animation"]
     speed = values["speed"]
-    loop = "yes" if animation == "flag-wave" else values["loop"]
+    loop = (
+        "yes"
+        if animation == "flag-wave"
+        else values["loop"]
+    )
 
-    command = [
+    return [
         PYTHON,
         SCRIPT,
         image,
-        OUTPUT,
+        output_path,
         color["mode"],
         str(cols),
         str(rows),
@@ -998,8 +1109,110 @@ def generate(image, values):
         loop,
     ]
 
+
+def exporter_command(
+    image,
+    output_path,
+    values,
+):
+    color = values["color"]
+    cols, rows = values["dimensions"]
+    cell_w, cell_h = values["character_size"]
+
+    background_value = color["background"]
+    background = (
+        "none"
+        if background_value is None
+        else background_value
+    )
+
+    palette = (
+        ",".join(color["palette"])
+        if color["palette"]
+        else "none"
+    )
+
+    animation = values["animation"]
+    speed = values["speed"]
+    loop = (
+        "yes"
+        if animation == "flag-wave"
+        else values["loop"]
+    )
+
+    return [
+        PYTHON,
+        EXPORTER,
+        image,
+        output_path,
+        "--format",
+        values["output_format"],
+        "--mode",
+        color["mode"],
+        "--cols",
+        str(cols),
+        "--rows",
+        str(rows),
+        "--ramp",
+        values["ramp"],
+        "--contrast",
+        str(values["contrast"]),
+        "--brightness",
+        str(values["brightness"]),
+        "--gamma",
+        str(values["gamma"]),
+        "--cell-w",
+        str(cell_w),
+        "--cell-h",
+        str(cell_h),
+        "--background",
+        background,
+        "--foreground",
+        color["foreground"],
+        "--palette",
+        palette,
+        "--animation",
+        animation,
+        "--speed",
+        speed,
+        "--loop",
+        loop,
+    ]
+
+
+def generate(image, values):
+    output_format = values["output_format"]
+
+    if output_format == "svg":
+        output_path = SVG_OUTPUT
+        command = renderer_command(
+            image,
+            output_path,
+            values,
+        )
+        label = "SVG"
+
+    else:
+        if output_format == "png":
+            output_path = PNG_OUTPUT
+            label = "PNG"
+        elif output_format == "jpeg":
+            output_path = JPEG_OUTPUT
+            label = "JPEG"
+        else:
+            output_path = GIF_OUTPUT
+            label = "GIF"
+
+        command = exporter_command(
+            image,
+            output_path,
+            values,
+        )
+
     print()
-    print("Generating ASCII profile...")
+    print(
+        f"Generating {label}..."
+    )
     print()
 
     try:
@@ -1009,19 +1222,19 @@ def generate(image, values):
         )
     except FileNotFoundError as exc:
         print(
-            f"Could not start renderer: {exc}"
+            f"Could not start exporter/renderer: {exc}"
         )
         raise SystemExit(1)
     except subprocess.CalledProcessError as exc:
         print(
             "Generation failed "
-            f"(renderer exit code {exc.returncode})."
+            f"(exit code {exc.returncode})."
         )
         raise SystemExit(1)
 
     print()
     print("Done!")
-    print(f"Generated: {OUTPUT}")
+    print(f"Generated: {output_path}")
 
 
 def run_normal(image, color):
@@ -1162,6 +1375,12 @@ def main():
     if not os.path.isfile(SCRIPT):
         print(
             f"Renderer not found: {SCRIPT}"
+        )
+        raise SystemExit(1)
+
+    if not os.path.isfile(EXPORTER):
+        print(
+            f"Exporter not found: {EXPORTER}"
         )
         raise SystemExit(1)
 

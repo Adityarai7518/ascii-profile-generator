@@ -8,17 +8,21 @@ __pycache__/
 venv/
 env/
 
-# Generated output
+# Generated ASCII output
 avi-ascii.svg
-*.svg
+avi-ascii.png
+avi-ascii.jpg
+avi-ascii.jpeg
+avi-ascii.gif
 
 # Local input images
 my-photo.png
-*.jpg
-*.jpeg
-*.png
 *.webp
 *.heic
+
+# Keep repository examples
+!sample.png
+!demo.gif
 
 # macOS
 .DS_Store

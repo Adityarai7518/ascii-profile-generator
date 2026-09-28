@@ -3,6 +3,7 @@ from PIL import (
     ImageChops,
     ImageEnhance,
     ImageOps,
+    ImageStat,
     UnidentifiedImageError,
 )
 import html
@@ -51,6 +52,7 @@ ALPHA_THRESHOLD = 0.06
 MIN_COLS, MAX_COLS = 20, 300
 MIN_ROWS, MAX_ROWS = 10, 200
 MAX_CELLS = 50000
+MAX_SOURCE_PIXELS = 50_000_000
 
 MIN_CELL_W, MAX_CELL_W = 3, 30
 MIN_CELL_H, MAX_CELL_H = 5, 40
@@ -282,7 +284,7 @@ def parse_args():
             sys.argv[2]
         ),
         "mode": (
-            sys.argv[3].strip().lower()
+            sys.argv[3]
             if len(sys.argv) > 3
             else "light"
         ),
@@ -310,19 +312,19 @@ def parse_args():
         ),
         "palette": palette,
         "animation": (
-            sys.argv[15].strip().lower()
+            sys.argv[15]
             if len(sys.argv) > 15
             else "row-reveal"
         ),
         "speed": (
-            sys.argv[16].strip().lower()
+            sys.argv[16]
             if len(sys.argv) > 16
             else "normal"
         ),
         "loop": (
             sys.argv[17].strip().lower()
             if len(sys.argv) > 17
-            else "yes"
+            else "no"
         ),
     }
 
@@ -496,6 +498,9 @@ def parse_args():
     }:
         config["background"] = None
 
+    elif background == "original":
+        config["background"] = "original"
+
     elif is_hex(background):
         config["background"] = (
             background
@@ -504,7 +509,7 @@ def parse_args():
     else:
         fail(
             "Background must be "
-            "#RRGGBB, none, "
+            "#RRGGBB, original, none, "
             "or transparent."
         )
 
@@ -619,6 +624,12 @@ def crop_to_cell_aspect(
 def load_source(src):
     try:
         with Image.open(src) as image:
+            if image.width * image.height > MAX_SOURCE_PIXELS:
+                fail(
+                    "Input image is too large. "
+                    f"Maximum supported size is {MAX_SOURCE_PIXELS:,} pixels."
+                )
+
             image = ImageOps.exif_transpose(image)
             return image.convert(
                 "RGBA"
@@ -639,6 +650,49 @@ def load_source(src):
 # --------------------------------------------------
 # Build ASCII grid
 # --------------------------------------------------
+
+
+def source_has_transparency(src):
+    """Return True when the source contains any transparency."""
+    source = load_source(src)
+    alpha = source.getchannel("A")
+    minimum, maximum = alpha.getextrema()
+    return minimum < 255
+
+
+def infer_original_background(src):
+    """Return a simple background representation without redrawing the source."""
+    source = load_source(src)
+    alpha = source.getchannel("A")
+    minimum, maximum = alpha.getextrema()
+
+    if minimum < 255:
+        return None
+
+    rgb = source.convert("RGB")
+    width, height = rgb.size
+    border = max(1, min(width, height) // 20)
+
+    regions = [
+        (0, 0, width, border),
+        (0, height - border, width, height),
+        (0, 0, border, height),
+        (width - border, 0, width, height),
+    ]
+
+    means = [
+        ImageStat.Stat(rgb.crop(box)).mean
+        for box in regions
+    ]
+
+    if not means:
+        return "#ffffff"
+
+    count = len(means)
+    r = sorted(value[0] for value in means)[count // 2]
+    g = sorted(value[1] for value in means)[count // 2]
+    b = sorted(value[2] for value in means)[count // 2]
+    return rgb_to_hex((r, g, b))
 
 def build_grid(config):
 
@@ -901,6 +955,13 @@ def build_grid(config):
                 ),
             )
 
+            # Apply S-curve for enhanced midtone separation
+            normalized = (
+                normalized
+                * normalized
+                * (3.0 - 2.0 * normalized)
+            )
+
             normalized = (
                 normalized
                 ** config["gamma"]
@@ -1054,8 +1115,7 @@ def build_grid(config):
             "custom",
             "multicolour",
         }
-        and config["background"]
-        is not None
+        and is_hex(config["background"])
     ):
         dark_mapping = (
             background_is_dark(
@@ -1289,6 +1349,22 @@ def build_grid(config):
                     "foreground"
                 ]
 
+            if (
+                config["mode"]
+                != "original"
+            ):
+                # Opacity as secondary luminance cue
+                tone_opacity = (
+                    0.35
+                    + 0.65
+                    * base_density
+                )
+
+                alpha_value = (
+                    alpha_grid[y][x]
+                    * tone_opacity
+                )
+
             row.append({
                 "index": index,
                 "alpha": alpha_value,
@@ -1297,6 +1373,73 @@ def build_grid(config):
             })
 
         grid.append(row)
+
+    if not dark_mapping:
+        updates = []
+        for y in range(config["rows"]):
+            for x in range(config["cols"]):
+                if grid[y][x]["index"] == 0 and grid[y][x]["alpha"] > 0.0:
+                    visible_neighbors = 0
+                    for dy in (-1, 0, 1):
+                        for dx in (-1, 0, 1):
+                            if dy == 0 and dx == 0:
+                                continue
+                            ny, nx = y + dy, x + dx
+                            if 0 <= ny < config["rows"] and 0 <= nx < config["cols"]:
+                                if grid[ny][nx]["index"] > 0:
+                                    visible_neighbors += 1
+                    if visible_neighbors >= 5:
+                        updates.append((x, y))
+        
+        for x, y in updates:
+            grid[y][x]["index"] = 1
+
+        # SECOND PASS: Structural opacity correction
+        bg_rgb = None
+        if config["mode"] == "light":
+            bg_rgb = (255, 255, 255)
+        else:
+            bg_config = config.get("background")
+            if bg_config == "original":
+                bg_config = infer_original_background(config["src"])
+            if bg_config is not None and bg_config != "none":
+                try:
+                    bg_rgb = hex_rgb(bg_config)
+                except (ValueError, TypeError, IndexError):
+                    pass
+
+        if bg_rgb is not None:
+            bg_luma = 0.2126 * bg_rgb[0] + 0.7152 * bg_rgb[1] + 0.0722 * bg_rgb[2]
+            if bg_luma > 200:
+                for y in range(config["rows"]):
+                    for x in range(config["cols"]):
+                        item = grid[y][x]
+                        
+                        if item["alpha"] <= 0.0:
+                            continue
+                            
+                        if (
+                            item["alpha"] < 0.50
+                            and item["index"] < 4
+                        ):
+                            visible_neighbors = 0
+                            for dy in (-1, 0, 1):
+                                for dx in (-1, 0, 1):
+                                    if dy == 0 and dx == 0:
+                                        continue
+                                    ny, nx = y + dy, x + dx
+                                    if 0 <= ny < config["rows"] and 0 <= nx < config["cols"]:
+                                        if grid[ny][nx]["index"] > 0:
+                                            visible_neighbors += 1
+                                            
+                            if visible_neighbors >= 4:
+                                if item["tone"] < 0.72:
+                                    if item["alpha"] < 0.25:
+                                        item["alpha"] = 0.55
+                                    else:
+                                        item["alpha"] = max(item["alpha"], 0.50)
+                                elif item["tone"] < 0.88:
+                                    item["alpha"] = max(item["alpha"], 0.42)
 
     return grid
 
@@ -1307,6 +1450,57 @@ def build_grid(config):
 
 def esc(text):
     return html.escape(text)
+
+
+def get_twinkle_cells(cols, rows, grid, ramp_last, rng_seed=20260926):
+    cells = [
+        (x, y)
+        for y in range(rows)
+        for x in range(cols)
+        if grid[y][x]["alpha"] > ALPHA_THRESHOLD and grid[y][x]["index"] > 0
+    ]
+
+    if not cells:
+        return []
+
+    limit = min(
+        80,
+        max(
+            30,
+            cols * rows // 110,
+        ),
+    )
+
+    if len(cells) > limit:
+        step = (len(cells) - 1) / max(1, limit - 1)
+        cells = [
+            cells[int(round(i * step))]
+            for i in range(limit)
+        ]
+
+    rng = random.Random(rng_seed)
+    rng.shuffle(cells)
+
+    results = []
+    for x, y in cells:
+        item = grid[y][x]
+        cell_rng = random.Random(f"{rng_seed}_{x}_{y}")
+        choice = cell_rng.random()
+        if choice < 0.25:
+            offset = 1
+        elif choice < 0.75:
+            offset = 2
+        else:
+            offset = 3
+            
+        glyph_index = min(ramp_last, item["index"] + offset)
+        results.append({
+            "x": x,
+            "y": y,
+            "glyph_index": glyph_index,
+        })
+
+    return results
 
 
 def main():
@@ -1455,19 +1649,37 @@ def main():
 
     def highlight_color(
         item,
-        amount=0.72,
+        amount=0.88,
     ):
+        if config["mode"] == "dark":
+            bg_is_dark = True
+        elif config["mode"] == "light":
+            bg_is_dark = False
+        else:
+            if background is not None:
+                bg_is_dark = background_is_dark(background)
+            else:
+                bg_is_dark = True
 
-        if (
-            config["mode"]
-            == "dark"
-        ):
-            return "#ffffff"
+        r, g, b = hex_rgb(item["color"])
 
-        return lighten_color(
-            item["color"],
-            amount,
-        )
+        if bg_is_dark:
+            return rgb_to_hex(
+                (
+                    r + (255 - r) * amount,
+                    g + (255 - g) * amount,
+                    b + (255 - b) * amount,
+                )
+            )
+        else:
+            target_r, target_g, target_b = r * 0.15, g * 0.15, b * 0.15
+            return rgb_to_hex(
+                (
+                    r + (target_r - r) * amount,
+                    g + (target_g - g) * amount,
+                    b + (target_b - b) * amount,
+                )
+            )
 
     def denser(
         index,
@@ -1504,56 +1716,26 @@ def main():
 
     def twinkle():
 
-        cells = visible_cells()
+        twinkle_cells = get_twinkle_cells(
+            cols,
+            rows,
+            grid,
+            ramp_last,
+        )
 
-        if not cells:
+        if not twinkle_cells:
             return ""
 
-        # Denser than before so the field feels alive.
-        # Keep it sparse enough that the original ASCII
-        # image remains visually stable.
-        limit = min(
-            160,
-            max(
-                50,
-                cols * rows // 42,
-            ),
-        )
-
-        if len(cells) > limit:
-
-            step = (
-                len(cells) - 1
-            ) / max(
-                1,
-                limit - 1,
-            )
-
-            cells = [
-                cells[
-                    int(round(i * step))
-                ]
-                for i in range(
-                    limit
-                )
-            ]
-
-        rng = random.Random(
-            20260926
-        )
-
-        rng.shuffle(cells)
+        parts = []
 
         duration = timing[
             "loop"
         ]
 
-        parts = []
-
-        for i, (x, y) in enumerate(
-            cells
-        ):
-
+        for i, tcell in enumerate(twinkle_cells):
+            x = tcell["x"]
+            y = tcell["y"]
+            
             item = grid[y][x]
 
             px = (
@@ -1563,92 +1745,52 @@ def main():
 
             py = row_y(y)
 
-            sparkle_char = denser(
-                item["index"],
-                3,
-            )
+            char = ramp[tcell["glyph_index"]]
 
-            # Bright highlight for the main twinkle.
             color = highlight_color(
-                item,
-                0.90,
+                item
             )
 
-            # Random timing across the whole animation
-            # prevents a predictable sequential pattern.
-            begin = rng.uniform(
-                0,
-                duration * 0.92,
+            delay = (
+                i
+                / max(1, len(twinkle_cells) - 1)
+                * min(
+                    1.2,
+                    duration * 0.35,
+                )
             )
 
-            sparkle_duration = rng.uniform(
-                0.55,
-                1.05,
+            sparkle_duration = (
+                0.60
+                + (i % 5) * 0.10
             )
 
-            # Main sparkle:
-            # fade in -> bright peak -> fade out.
+            base_color = item["color"]
+            base_opacity = item["alpha"]
+
             parts.append(
                 f'<text '
                 f'x="{px}" '
                 f'y="{py:.1f}" '
-                f'fill="{color}" '
-                f'font-size="{font_size:.1f}" '
-                f'opacity="0">'
-                f'{esc(sparkle_char)}'
+                f'fill="{base_color}" '
+                f'font-size="'
+                f'{font_size:.1f}" '
+                f'opacity="{base_opacity:.3f}">'
+                f'{esc(char)}'
                 f'<animate '
-                f'attributeName="opacity" '
-                f'values="0;0.7;1;0.45;0" '
-                f'keyTimes="0;0.12;0.28;0.65;1" '
+                f'attributeName="fill" '
+                f'values="{base_color};{color};{base_color}" '
+                f'keyTimes="0;0.2;1" '
                 f'dur="{sparkle_duration:.2f}s" '
-                f'begin="{begin:.3f}s" '
+                f'begin="{delay:.3f}s" '
                 f'{repeat_attr}/>'
                 f'</text>'
             )
 
-            # Some sparkles receive a smaller white glint
-            # shortly after the main flash.
-            if rng.random() < 0.42:
-
-                glint_char = denser(
-                    item["index"],
-                    4,
-                )
-
-                glint_begin = (
-                    begin
-                    + rng.uniform(
-                        0.18,
-                        0.40,
-                    )
-                ) % duration
-
-                glint_dur = rng.uniform(
-                    0.28,
-                    0.42,
-                )
-
-                parts.append(
-                    f'<text '
-                    f'x="{px}" '
-                    f'y="{py:.1f}" '
-                    f'fill="#ffffff" '
-                    f'font-size="{font_size:.1f}" '
-                    f'opacity="0">'
-                    f'{esc(glint_char)}'
-                    f'<animate '
-                    f'attributeName="opacity" '
-                    f'values="0;1;0" '
-                    f'keyTimes="0;0.5;1" '
-                    f'dur="{glint_dur:.2f}s" '
-                    f'begin="{glint_begin:.3f}s" '
-                    f'{repeat_attr}/>'
-                    f'</text>'
-                )
-
         return "".join(
             parts
         )
+
     # --------------------------------------------------
     # Sparkle Wave
     # --------------------------------------------------
@@ -1697,6 +1839,14 @@ def main():
             x_times = "0;1"
 
         cells = visible_cells()
+
+        limit = min(120, max(30, cols * rows // 70))
+        if len(cells) > limit:
+            step = (len(cells) - 1) / max(1, limit - 1)
+            cells = [
+                cells[int(round(i * step))]
+                for i in range(limit)
+            ]
 
         highlight_parts = []
 
@@ -1821,7 +1971,7 @@ def main():
                 canvas_w / 2,
                 canvas_h / 2,
             )
-            * 1.12
+            * 1.08
         )
 
         closed = polygon_points(
@@ -2088,6 +2238,11 @@ def main():
         f'SFMono-Regular, Consolas, '
         f'monospace">'
     ]
+
+    if background == "original":
+        background = infer_original_background(
+            config["src"]
+        )
 
     if background is not None:
         parts.append(
