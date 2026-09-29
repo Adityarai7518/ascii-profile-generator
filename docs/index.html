@@ -1,31 +1,24 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="light">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>ASCII Profile Generator | Image to Animated ASCII Art</title>
-    
-    <!-- Meta Descriptions -->
+
     <meta name="description" content="A Python-based image to ASCII art generator. Convert photos to customized, animated ASCII art and export as SVG, PNG, JPEG, or GIF for GitHub READMEs and profiles.">
-    
-    <!-- Canonical URL -->
     <link rel="canonical" href="https://Adityarai7518.github.io/ascii-profile-generator/">
-    
-    <!-- Open Graph Metadata -->
+
     <meta property="og:title" content="ASCII Profile Generator">
     <meta property="og:description" content="Convert photos into custom animated ASCII art and export as SVG, PNG, JPEG, or GIF for GitHub READMEs and profiles.">
     <meta property="og:type" content="website">
     <meta property="og:url" content="https://Adityarai7518.github.io/ascii-profile-generator/">
-    <!-- Assuming demo.gif acts as our social preview asset -->
     <meta property="og:image" content="https://raw.githubusercontent.com/Adityarai7518/ascii-profile-generator/main/demo.gif">
-    
-    <!-- Twitter Card Metadata -->
+
     <meta name="twitter:card" content="summary_large_image">
     <meta name="twitter:title" content="ASCII Profile Generator">
     <meta name="twitter:description" content="Generate animated ASCII art from images. SVG, PNG, JPEG, and GIF supported.">
     <meta name="twitter:image" content="https://raw.githubusercontent.com/Adityarai7518/ascii-profile-generator/main/demo.gif">
 
-    <!-- Structured Data (JSON-LD) -->
     <script type="application/ld+json">
     {
       "@context": "https://schema.org",
@@ -46,210 +39,797 @@
       }
     }
     </script>
-    
+
+    <!-- Theme Init -->
+    <script>
+        const savedTheme = localStorage.getItem('theme');
+        const initialTheme = savedTheme === 'dark' ? 'dark' : 'light';
+
+        if (initialTheme === 'dark') {
+            document.documentElement.removeAttribute('data-theme');
+        } else {
+            document.documentElement.setAttribute('data-theme', 'light');
+        }
+
+        localStorage.setItem('theme', initialTheme);
+    </script>
     <style>
+        /* Apple-Style Foundation */
         :root {
-            --bg-color: #0d1117;
-            --text-color: #c9d1d9;
-            --accent-color: #58a6ff;
-            --border-color: #30363d;
-            --code-bg: #161b22;
+            --bg: #09090b;
+            --bg-glass: rgba(24, 24, 27, 0.6);
+            --border: rgba(255, 255, 255, 0.1);
+            --border-hover: rgba(255, 255, 255, 0.2);
+            --text-primary: #ededed;
+            --text-secondary: #a1a1aa;
+            --text-muted: #71717a;
+            --accent: #3b82f6;
+            --accent-glow: rgba(59, 130, 246, 0.15);
+
+            --surface: rgba(255, 255, 255, 0.02);
+            --surface-hover: rgba(255, 255, 255, 0.03);
+            --surface-subtle: rgba(255, 255, 255, 0.05);
+
+            --radius-sm: 8px;
+            --radius-md: 14px;
+            --radius-lg: 24px;
+            --radius-pill: 999px;
+
+            --ease-apple: cubic-bezier(0.25, 0.1, 0.25, 1);
+            --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Helvetica Neue", Arial, sans-serif;
+            --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+
+            --shadow-sm: 0 2px 8px rgba(0,0,0,0.2), 0 1px 2px rgba(0,0,0,0.1);
+            --shadow-md: 0 8px 24px rgba(0,0,0,0.3), 0 2px 8px rgba(0,0,0,0.2);
+            --shadow-lg: 0 16px 40px rgba(0,0,0,0.4), 0 4px 12px rgba(0,0,0,0.2);
+            --shadow-ambient: 0 20px 40px -20px rgba(0,0,0,0.5), 0 0 40px -10px var(--accent-glow);
+
+            --btn-primary-bg: #fff;
+            --btn-primary-text: #000;
+            --btn-primary-hover: #e5e5e5;
+
+            --btn-secondary-bg: var(--surface-subtle);
+            --btn-secondary-border: var(--border);
+
+            --terminal-bg: #000;
+            --terminal-header: rgba(255,255,255,0.03);
+            --terminal-text: #a1a1aa;
+
+            --ascii-bg: rgba(255,255,255,0.02);
+            --demo-header-bg: rgba(255,255,255,0.03);
+
+            --demo-outer-bg: linear-gradient(180deg, rgba(255,255,255,0.1) 0%, rgba(255,255,255,0.02) 100%);
+            --demo-inner-bg: #000;
+
+            --gh-preset-bg: linear-gradient(145deg, rgba(255,255,255,0.03) 0%, transparent 100%);
+            --gh-preview-grid: repeating-linear-gradient(0deg, transparent, transparent 14px, rgba(255,255,255,0.02) 14px, rgba(255,255,255,0.02) 15px),
+                               repeating-linear-gradient(90deg, transparent, transparent 8px, rgba(255,255,255,0.02) 8px, rgba(255,255,255,0.02) 9px);
         }
+
+        [data-theme="light"] {
+            --bg: #F2F4F7;
+            --bg-glass: rgba(255, 255, 255, 0.72);
+            --border: rgba(0, 0, 0, 0.08);
+            --border-hover: rgba(0, 0, 0, 0.15);
+            --text-primary: #1D1D1F;
+            --text-secondary: #86868B;
+            --text-muted: #A1A1A6;
+            --accent: #0071E3;
+            --accent-glow: rgba(0, 113, 227, 0.15);
+
+            --surface: #FFFFFF;
+            --surface-hover: #F9FAFB;
+            --surface-subtle: #F9FAFB;
+
+            --shadow-sm: 0 2px 8px rgba(0,0,0,0.04), 0 1px 2px rgba(0,0,0,0.02);
+            --shadow-md: 0 8px 24px rgba(0,0,0,0.05), 0 2px 8px rgba(0,0,0,0.03);
+            --shadow-lg: 0 16px 40px rgba(0,0,0,0.06), 0 4px 12px rgba(0,0,0,0.04);
+            --shadow-ambient: 0 16px 40px rgba(0,0,0,0.06), 0 4px 12px rgba(0,0,0,0.04);
+
+            --btn-primary-bg: var(--accent);
+            --btn-primary-text: #fff;
+            --btn-primary-hover: #0077ED;
+
+            --btn-secondary-bg: var(--surface);
+            --btn-secondary-border: var(--border);
+
+            --terminal-bg: #1D1D1F;
+            --terminal-header: #2C2C2E;
+            --terminal-text: #F5F5F7;
+
+            --ascii-bg: rgba(0,0,0,0.03);
+            --demo-header-bg: var(--surface-subtle);
+
+            --demo-outer-bg: var(--border);
+            --demo-inner-bg: var(--bg);
+
+            --gh-preset-bg: var(--surface);
+            --gh-preview-grid: repeating-linear-gradient(0deg, transparent, transparent 14px, rgba(0, 0, 0, 0.03) 14px, rgba(0, 0, 0, 0.03) 15px),
+                               repeating-linear-gradient(90deg, transparent, transparent 8px, rgba(0, 0, 0, 0.03) 8px, rgba(0, 0, 0, 0.03) 9px);
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+
         body {
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
-            background-color: var(--bg-color);
-            color: var(--text-color);
-            line-height: 1.6;
-            margin: 0;
-            padding: 0;
+            font-family: var(--font-sans);
+            background-color: var(--bg);
+            color: var(--text-primary);
+            line-height: 1.5;
+            overflow-x: hidden;
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+            transition: background-color 0.3s var(--ease-apple), color 0.3s var(--ease-apple);
         }
-        header {
-            text-align: center;
-            padding: 4rem 1rem;
-            border-bottom: 1px solid var(--border-color);
-        }
-        h1, h2, h3 {
-            color: #ffffff;
-        }
-        h1 {
-            font-size: 2.5rem;
-            margin-bottom: 0.5rem;
-        }
-        .subtitle {
-            font-size: 1.25rem;
-            color: #8b949e;
-        }
+
+        /* Typography */
+        h1, h2, h3, h4 { color: var(--text-primary); letter-spacing: -0.02em; font-weight: 600; }
+        h1 { font-size: clamp(2.5rem, 5vw, 4.5rem); letter-spacing: -0.03em; font-weight: 700; line-height: 1.05; margin-bottom: 1rem; }
+        h2 { font-size: clamp(1.75rem, 3vw, 2.5rem); margin-bottom: 1.5rem; }
+        h3 { font-size: 1.25rem; margin-bottom: 0.5rem; }
+        p { color: var(--text-secondary); }
+        a { color: var(--text-primary); text-decoration: none; transition: color 0.2s var(--ease-apple); }
+        a:hover { color: var(--accent); }
+
+        code, pre { font-family: var(--font-mono); font-size: 0.9em; }
+
+        /* Layout */
         .container {
-            max-width: 900px;
+            width: 100%;
+            max-width: 1024px;
             margin: 0 auto;
-            padding: 2rem 1rem;
+            padding: 0 1.5rem;
         }
-        a {
-            color: var(--accent-color);
-            text-decoration: none;
+        .section { padding: 6rem 0; }
+        .section-sm { padding: 3rem 0; }
+
+        /* Navigation */
+        nav {
+            position: sticky;
+            top: 0;
+            z-index: 100;
+            background: var(--bg-glass);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border-bottom: 1px solid var(--border);
+            transition: background-color 0.3s var(--ease-apple), border-color 0.3s var(--ease-apple);
         }
-        a:hover {
-            text-decoration: underline;
+        .nav-inner {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            height: 56px;
+            gap: 1rem;
         }
-        .button {
-            display: inline-block;
-            background-color: #238636;
-            color: #ffffff;
-            padding: 0.75rem 1.5rem;
-            border-radius: 6px;
-            font-weight: 600;
-            margin-top: 1rem;
-        }
-        .button:hover {
-            background-color: #2ea043;
-            text-decoration: none;
-        }
-        pre {
-            background-color: var(--code-bg);
-            padding: 1rem;
-            border-radius: 6px;
-            overflow-x: auto;
-            border: 1px solid var(--border-color);
-        }
-        code {
-            font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
-            font-size: 0.9em;
-        }
-        img {
-            max-width: 100%;
-            height: auto;
-            border-radius: 6px;
-        }
-        .demo-container {
-            text-align: center;
-            margin: 2rem 0;
-        }
-        .features-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+        .nav-brand { font-weight: 600; font-size: 1rem; color: var(--text-primary); }
+        .nav-links {
+            display: flex;
             gap: 1.5rem;
-            margin: 2rem 0;
+            align-items: center;
         }
-        .feature-card {
-            background: var(--code-bg);
-            padding: 1.5rem;
-            border-radius: 6px;
-            border: 1px solid var(--border-color);
+        .nav-links a { color: var(--text-secondary); font-size: 0.85rem; font-weight: 500; }
+        .nav-links a:hover { color: var(--text-primary); }
+
+        /* Theme Toggle */
+        .theme-toggle {
+            background: transparent;
+            border: none;
+            color: var(--text-secondary);
+            cursor: pointer;
+            padding: 0.5rem;
+            border-radius: var(--radius-pill);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.2s var(--ease-apple);
         }
-        .faq-item {
+        .theme-toggle:hover { color: var(--text-primary); background: var(--surface-subtle); }
+        .theme-toggle:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+        .theme-toggle:active { transform: scale(0.9); }
+        .theme-toggle svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+
+        /* Sun/Moon logic */
+        [data-theme="light"] .moon-icon { display: none; }
+        [data-theme="light"] .sun-icon { display: block; }
+        :root:not([data-theme="light"]) .moon-icon { display: block; }
+        :root:not([data-theme="light"]) .sun-icon { display: none; }
+
+        @media (max-width: 768px) {
+            .nav-inner { flex-wrap: wrap; height: auto; padding: 1rem 0; justify-content: center; }
+            .nav-brand { width: 100%; text-align: center; margin-bottom: 0.5rem; }
+            .nav-links { justify-content: center; flex-wrap: wrap; gap: 1rem; }
+        }
+
+        /* Hero */
+        .hero {
+            position: relative;
+            padding: 8rem 0 6rem;
+            text-align: center;
+            overflow: hidden;
+        }
+        .hero::before {
+            content: '';
+            position: absolute;
+            top: -50%; left: 50%;
+            transform: translateX(-50%);
+            width: 800px; height: 800px;
+            background: radial-gradient(circle, var(--accent-glow) 0%, transparent 70%);
+            z-index: -1;
+            pointer-events: none;
+        }
+        .hero-bg-ascii {
+            position: absolute;
+            top: 0; left: 0; right: 0; bottom: 0;
+            font-family: var(--font-mono);
+            font-size: 14px;
+            color: var(--ascii-bg);
+            line-height: 1.2;
+            word-break: break-all;
+            overflow: hidden;
+            z-index: -2;
+            user-select: none;
+            white-space: pre;
+            transition: color 0.3s var(--ease-apple);
+        }
+        .eyebrow {
+            display: inline-flex;
+            align-items: center;
+            padding: 0.25rem 0.75rem;
+            background: var(--surface-subtle);
+            border: 1px solid var(--border);
+            border-radius: var(--radius-pill);
+            font-size: 0.75rem;
+            font-weight: 600;
+            letter-spacing: 0.05em;
+            color: var(--text-muted);
             margin-bottom: 1.5rem;
         }
-        .faq-item h3 {
-            margin-bottom: 0.5rem;
+        .hero-subtitle {
+            font-size: clamp(1.125rem, 2vw, 1.25rem);
+            max-width: 600px;
+            margin: 0 auto 2.5rem;
+            color: var(--text-secondary);
         }
-        footer {
-            text-align: center;
+        .hero-actions {
+            display: flex;
+            gap: 1rem;
+            justify-content: center;
+            margin-bottom: 3rem;
+            flex-wrap: wrap;
+        }
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            padding: 0.75rem 1.5rem;
+            border-radius: var(--radius-pill);
+            font-weight: 600;
+            font-size: 0.95rem;
+            transition: all 0.2s var(--ease-apple);
+            cursor: pointer;
+            border: 1px solid transparent;
+        }
+        .btn:active { transform: scale(0.97); }
+        .btn-primary {
+            background: var(--btn-primary-bg);
+            color: var(--btn-primary-text);
+            box-shadow: var(--shadow-sm);
+        }
+        .btn-primary:hover {
+            background: var(--btn-primary-hover);
+        }
+        .btn-secondary {
+            background: var(--btn-secondary-bg);
+            border-color: var(--btn-secondary-border);
+            color: var(--text-primary);
+            box-shadow: var(--shadow-sm);
+        }
+        .btn-secondary:hover {
+            background: var(--surface-hover);
+        }
+        .hero-meta {
+            display: flex;
+            gap: 1.5rem;
+            justify-content: center;
+            color: var(--text-muted);
+            font-size: 0.85rem;
+            font-weight: 500;
+            flex-wrap: wrap;
+        }
+
+        /* Demo Visual */
+        .demo-wrapper {
+            position: relative;
+            max-width: 800px;
+            margin: 4rem auto 0;
+            padding: 1px;
+            background: var(--demo-outer-bg);
+            border-radius: var(--radius-lg);
+            box-shadow: var(--shadow-ambient);
+        }
+        .demo-inner {
+            background: var(--demo-inner-bg);
+            border-radius: calc(var(--radius-lg) - 1px);
+            overflow: hidden;
+            position: relative;
+        }
+        .demo-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 0.75rem 1rem;
+            background: var(--demo-header-bg);
+            border-bottom: 1px solid var(--border);
+        }
+        .demo-label {
+            font-size: 0.7rem;
+            font-weight: 600;
+            letter-spacing: 0.1em;
+            color: var(--text-muted);
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+        .demo-label::before {
+            content: '';
+            display: block;
+            width: 6px; height: 6px;
+            background: #34C759;
+            border-radius: 50%;
+            box-shadow: 0 0 8px rgba(52, 199, 89, 0.5);
+        }
+        .demo-tech-label {
+            font-family: var(--font-mono);
+            font-size: 0.75rem;
+            color: var(--text-muted);
+        }
+        .demo-img {
+            display: block;
+            width: 100%;
+            height: auto;
+            opacity: 0.9;
+        }
+        [data-theme="light"] .demo-img { opacity: 1; }
+
+        /* Features */
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 1.5rem;
+        }
+        .card {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: var(--radius-lg);
             padding: 2rem;
-            border-top: 1px solid var(--border-color);
-            margin-top: 3rem;
-            color: #8b949e;
+            transition: all 0.3s var(--ease-apple);
+            position: relative;
+            overflow: hidden;
+            box-shadow: var(--shadow-sm);
+        }
+        .card:hover {
+            border-color: var(--border-hover);
+            transform: translateY(-2px);
+            box-shadow: var(--shadow-md);
+        }
+        .card-icon {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 44px; height: 44px;
+            border-radius: var(--radius-md);
+            background: var(--surface-subtle);
+            border: 1px solid var(--border);
+            margin-bottom: 1.5rem;
+            color: var(--text-primary);
+        }
+        .card-icon svg { width: 22px; height: 22px; }
+
+        /* GitHub Preset Section */
+        .highlight-section {
+            background: var(--gh-preset-bg);
+            border: 1px solid var(--border);
+            border-radius: var(--radius-lg);
+            padding: 4rem 3rem;
+            display: flex;
+            align-items: center;
+            gap: 4rem;
+            position: relative;
+            overflow: hidden;
+            box-shadow: var(--shadow-md);
+        }
+        .highlight-content { flex: 1; }
+        .highlight-visual {
+            flex: 1;
+            display: flex;
+            justify-content: center;
+        }
+        .gh-preview-box {
+            width: 100%;
+            max-width: 400px;
+            aspect-ratio: 2/1;
+            background: var(--gh-preview-grid);
+            border: 1px solid var(--border);
+            border-radius: var(--radius-md);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: var(--text-muted);
+            font-family: var(--font-mono);
+            font-size: 0.85rem;
+            position: relative;
+        }
+        .gh-preview-box::after {
+            content: '100 × 50 Grid';
+            background: var(--bg);
+            padding: 0.25rem 0.5rem;
+            border: 1px solid var(--border);
+            border-radius: var(--radius-sm);
+            box-shadow: var(--shadow-sm);
+        }
+        .gh-list { margin-top: 1.5rem; list-style: none; }
+        .gh-list li {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            margin-bottom: 0.75rem;
+            color: var(--text-secondary);
+        }
+        .gh-list li::before {
+            content: '';
+            display: block;
+            width: 5px; height: 5px;
+            background: var(--text-muted);
+            border-radius: 50%;
+        }
+        @media (max-width: 768px) {
+            .highlight-section { flex-direction: column; padding: 2rem; gap: 2rem; }
+        }
+
+        /* Quick Start */
+        .terminal-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 1.5rem;
+            margin-top: 2rem;
+        }
+        .terminal {
+            background: var(--terminal-bg);
+            border: 1px solid var(--border);
+            border-radius: var(--radius-md);
+            overflow: hidden;
+            box-shadow: var(--shadow-md);
+        }
+        .terminal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 0.75rem 1rem;
+            background: var(--terminal-header);
+            border-bottom: 1px solid var(--border);
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+        }
+        .terminal-body {
+            padding: 1.5rem 1rem;
+            position: relative;
+        }
+        .terminal pre {
+            background: transparent;
+            border: none;
+            padding: 0;
+            color: var(--terminal-text);
+            white-space: pre-wrap;
+        }
+        .copy-btn {
+            background: var(--surface-subtle);
+            border: none;
+            color: var(--text-primary);
+            padding: 0.25rem 0.75rem;
+            border-radius: var(--radius-pill);
+            font-size: 0.75rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s var(--ease-apple);
+        }
+        .copy-btn:hover { background: var(--surface-hover); }
+        .copy-btn:active { transform: scale(0.95); }
+
+        /* FAQ */
+        .faq-list {
+            max-width: 700px;
+            margin: 0 auto;
+            border-top: 1px solid var(--border);
+        }
+        details {
+            border-bottom: 1px solid var(--border);
+        }
+        summary {
+            padding: 1.5rem 0;
+            font-weight: 600;
+            font-size: 1.1rem;
+            color: var(--text-primary);
+            cursor: pointer;
+            list-style: none;
+            position: relative;
+            outline: none;
+        }
+        summary::-webkit-details-marker { display: none; }
+        summary::after {
+            content: '+';
+            position: absolute;
+            right: 0;
+            top: 1.5rem;
+            color: var(--text-muted);
+            transition: transform 0.3s var(--ease-apple);
+            font-weight: 400;
+            font-size: 1.25rem;
+        }
+        details[open] summary::after { transform: rotate(45deg); color: var(--accent); }
+        details[open] summary { color: var(--accent); }
+        .faq-content {
+            padding-bottom: 1.5rem;
+            color: var(--text-secondary);
+        }
+
+        /* Footer */
+        footer {
+            border-top: 1px solid var(--border);
+            padding: 3rem 0;
+            text-align: center;
+            color: var(--text-muted);
+            font-size: 0.9rem;
+        }
+        .footer-links {
+            display: flex;
+            justify-content: center;
+            gap: 1.5rem;
+            margin-top: 1rem;
+        }
+
+        /* Animations */
+        .fade-in {
+            animation: fadeIn 0.8s var(--ease-apple) forwards;
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        @media (prefers-reduced-motion: reduce) {
+            *, *::before, *::after {
+                animation: none !important;
+                transition: none !important;
+                scroll-behavior: auto !important;
+            }
         }
     </style>
 </head>
 <body>
 
-<header>
-    <h1>ASCII Profile Generator</h1>
-    <p class="subtitle">A Python-based image-to-ASCII generator for customizable static and animated ASCII art, with exports including SVG, PNG, JPEG, and GIF.</p>
-    <a href="https://github.com/Adityarai7518/ascii-profile-generator" class="button">View on GitHub</a>
-</header>
-
-<main class="container">
-    <div class="demo-container">
-        <!-- The demo.gif asset tracked on the main branch is used here and for social preview (og:image) -->
-        <img src="https://raw.githubusercontent.com/Adityarai7518/ascii-profile-generator/main/demo.gif" alt="Animated ASCII art demonstration showing the Twinkle effect applied to an image" width="640" height="640">
+<nav>
+    <div class="container nav-inner">
+        <div class="nav-brand">ASCII Profile Generator</div>
+        <div class="nav-links">
+            <a href="#features">Features</a>
+            <a href="#github-preset">GitHub Profile</a>
+            <a href="#quick-start">Quick Start</a>
+            <a href="#faq">FAQ</a>
+            <a href="https://github.com/Adityarai7518/ascii-profile-generator" target="_blank" rel="noopener">GitHub</a>
+            <button type="button" class="theme-toggle" id="theme-toggle" aria-label="Toggle theme" title="Toggle theme">
+                <svg class="moon-icon" viewBox="0 0 24 24">
+                    <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
+                </svg>
+                <svg class="sun-icon" viewBox="0 0 24 24">
+                    <circle cx="12" cy="12" r="5"></circle>
+                    <line x1="12" y1="1" x2="12" y2="3"></line>
+                    <line x1="12" y1="21" x2="12" y2="23"></line>
+                    <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+                    <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+                    <line x1="1" y1="12" x2="3" y2="12"></line>
+                    <line x1="21" y1="12" x2="23" y2="12"></line>
+                    <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+                    <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+                </svg>
+            </button>
+        </div>
     </div>
+</nav>
 
-    <section id="about">
-        <h2>What is this?</h2>
-        <p>The <strong>ASCII Profile Generator</strong> is an open-source Python tool that converts images and photos into customizable ASCII art. Whether you need a static profile picture or an animated SVG for your GitHub README, this tool generates text art based on user configuration.</p>
-        <p>Export ASCII art as script-free animated SVG, PNG, JPEG, or GIF.</p>
+<main>
+    <section class="hero container fade-in">
+        <div class="hero-bg-ascii" aria-hidden="true">
+#     #    # #       #   #     #    # #   # #     # #      #  #      #
+#     #    # #       #   #     #####  ####  #     # #####  #  #      #####
+#     #    # #  ###  #   #     #      # #   #     # #      #  #      #
+#     #    # #    #  #   #     #      #  #  #     # #      #  #      #
+#####  ####   ####  ### ###    #      #   #  #####  #     ### #####  #####
+        </div>
+        <div class="eyebrow">OPEN SOURCE &bull; PYTHON &bull; ASCII ART</div>
+        <h1>ASCII Profile Generator</h1>
+        <p class="hero-subtitle">
+            Convert images to customizable, animated ASCII art and export as SVG, PNG, JPEG, or GIF.
+        </p>
+        <div class="hero-actions">
+            <a href="https://github.com/Adityarai7518/ascii-profile-generator" class="btn btn-primary">View on GitHub</a>
+            <a href="#quick-start" class="btn btn-secondary">Get Started</a>
+        </div>
+        <div class="hero-meta">
+            <span>Python</span> &bull;
+            <span>Pillow</span> &bull;
+            <span>SVG</span> &bull;
+            <span>PNG</span> &bull;
+            <span>JPEG</span> &bull;
+            <span>GIF</span>
+        </div>
+
+        <div class="demo-wrapper">
+            <div class="demo-inner">
+                <div class="demo-header">
+                    <span class="demo-label">LIVE PREVIEW</span>
+                    <span class="demo-tech-label">SVG ANIMATION</span>
+                </div>
+                <img src="https://raw.githubusercontent.com/Adityarai7518/ascii-profile-generator/main/demo.gif" alt="Animated ASCII art demonstration showing the Twinkle effect applied to an image" class="demo-img" width="640" height="640">
+            </div>
+        </div>
     </section>
 
-    <section id="features">
-        <h2>Key Features</h2>
-        <div class="features-grid">
-            <div class="feature-card">
+    <section id="features" class="container section">
+        <h2 style="text-align: center; margin-bottom: 3rem;">Key Features</h2>
+        <div class="grid">
+            <div class="card">
+                <div class="card-icon">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
+                </div>
                 <h3>Export Formats</h3>
                 <p>Natively export your creations as scalable <strong>SVG</strong>, standard <strong>PNG</strong> and <strong>JPEG</strong>, or fully animated <strong>GIF</strong> files.</p>
             </div>
-            <div class="feature-card">
+            <div class="card">
+                <div class="card-icon">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><polygon points="10 8 16 12 10 16 10 8"></polygon></svg>
+                </div>
                 <h3>Animations</h3>
-                <p>Supports 10 animation modes: Row Reveal, Column Reveal, Diagonal Reveal, Iris Aperture, Circular Reveal, Fade In, Twinkle, Sparkle Wave, Flag Wave, and Instant. Flag Wave is available through the Additional -> Flag menu. SVG exports retain animation without relying on JavaScript.</p>
+                <p>Supports 10 animation modes including Row Reveal, Twinkle, Sparkle Wave, and Flag Wave. SVG exports retain animation natively, though some platforms like GitHub may sanitize and restrict SVG animation.</p>
             </div>
-            <div class="feature-card">
-                <h3>GitHub Profile Preset</h3>
-                <p>Includes a dedicated GitHub preset that automatically sets the dimensions to 100×50 characters, transparent backgrounds, and standard scaling for developers building a GitHub README.</p>
-            </div>
-            <div class="feature-card">
+            <div class="card">
+                <div class="card-icon">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"></path></svg>
+                </div>
                 <h3>Color Customization</h3>
                 <p>Derive cell colors from the original source image, force classic Light or Dark terminal themes, design custom color palettes, or generate dynamic Flag motifs.</p>
             </div>
         </div>
     </section>
 
-    <section id="quick-start">
-        <h2>Quick Start</h2>
-        <p>You only need Python 3 installed. The setup script automatically creates a virtual environment and installs Pillow (the only dependency).</p>
-        
-        <h3>macOS / Linux</h3>
-        <pre><code>python3 setup.py
-python3 ascii_generator.py sample.png</code></pre>
-        
-        <h3>Windows</h3>
-        <pre><code>py setup.py
-py ascii_generator.py sample.png</code></pre>
+    <section id="github-preset" class="container section-sm">
+        <div class="highlight-section">
+            <div class="highlight-content">
+                <h2>GitHub Profile Preset</h2>
+                <p>The built-in GitHub Profile Preset automatically configures practical defaults for GitHub README and profile artwork.</p>
+                <ul class="gh-list">
+                    <li>Transparent background to match any system theme</li>
+                    <li>100×50 dimension sizing</li>
+                    <li>Twinkle animation</li>
+                    <li>SVG format (use GIF if GitHub restricts SVG animation)</li>
+                </ul>
+            </div>
+            <div class="highlight-visual">
+                <div class="gh-preview-box"></div>
+            </div>
+        </div>
     </section>
 
-    <section id="faq">
-        <h2>Frequently Asked Questions (FAQ)</h2>
-        
-        <div class="faq-item">
-            <h3>How do I convert an image to ASCII art?</h3>
-            <p>Run the <code>ascii_generator.py</code> script and provide your target image as an argument (e.g., <code>python ascii_generator.py photo.jpg</code>). The interactive CLI will guide you through choosing colors, size, animations, and the final export format.</p>
-        </div>
+    <section id="quick-start" class="container section">
+        <h2 style="text-align: center;">Quick Start</h2>
+        <p style="text-align: center; max-width: 600px; margin: 0 auto;">You only need Python 3 installed. The setup script automatically creates a virtual environment and installs Pillow.</p>
 
-        <div class="faq-item">
-            <h3>Which image inputs are supported?</h3>
-            <p>The generator supports any image format recognized by the Python Pillow library (including PNG, JPEG, WebP, BMP, and GIF).</p>
-        </div>
+        <div class="terminal-grid">
+            <div class="terminal">
+                <div class="terminal-header">
+                    <span>macOS / Linux</span>
+                    <button type="button" class="copy-btn" onclick="copyCode('code-mac', this)">Copy</button>
+                </div>
+                <div class="terminal-body">
+                    <pre><code id="code-mac">python3 setup.py
+python3 ascii_generator.py sample.png</code></pre>
+                </div>
+            </div>
 
-        <div class="faq-item">
-            <h3>Can I create ASCII art for a GitHub README?</h3>
-            <p>Yes. The tool includes a built-in "GitHub Profile Preset" accessible right when you launch it. This sets the dimensions to a clean 100×50 grid, forces a transparent background to respect viewer system themes, and recommends SVG.</p>
+            <div class="terminal">
+                <div class="terminal-header">
+                    <span>Windows</span>
+                    <button type="button" class="copy-btn" onclick="copyCode('code-win', this)">Copy</button>
+                </div>
+                <div class="terminal-body">
+                    <pre><code id="code-win">py setup.py
+py ascii_generator.py sample.png</code></pre>
+                </div>
+            </div>
         </div>
+    </section>
 
-        <div class="faq-item">
-            <h3>Can I export ASCII art as SVG?</h3>
-            <p>Yes, SVG is natively supported and is the recommended format. SVGs scale without blurring and support built-in animations without requiring external JavaScript.</p>
-        </div>
-
-        <div class="faq-item">
-            <h3>Does it work offline?</h3>
-            <p>Yes. The entire conversion process relies on the local Python Pillow imaging library. No data is sent to any external server.</p>
-        </div>
-
-        <div class="faq-item">
-            <h3>Can I customize the ASCII dimensions and character ramp?</h3>
-            <p>Yes. The tool provides options to set custom dimensions, character cell sizes, and ASCII density ramps.</p>
-        </div>
-
-        <div class="faq-item">
-            <h3>What dependency does the generator use?</h3>
-            <p>Pillow is the project's required Python dependency.</p>
+    <section id="faq" class="container section">
+        <h2 style="text-align: center; margin-bottom: 3rem;">Frequently Asked Questions</h2>
+        <div class="faq-list">
+            <details>
+                <summary>How do I convert an image to ASCII art?</summary>
+                <div class="faq-content">
+                    Run the <code>ascii_generator.py</code> script and provide your target image as an argument (e.g., <code>python ascii_generator.py photo.jpg</code>). The interactive CLI will guide you through choosing colors, size, animations, and the final export format.
+                </div>
+            </details>
+            <details>
+                <summary>Which image inputs are supported?</summary>
+                <div class="faq-content">
+                    The generator supports any image format recognized by the Python Pillow library (including PNG, JPEG, WebP, BMP, and GIF).
+                </div>
+            </details>
+            <details>
+                <summary>Can I export ASCII art as SVG?</summary>
+                <div class="faq-content">
+                    Yes, SVG is natively supported and is the recommended format. SVGs scale without blurring and support built-in animations without requiring external JavaScript. However, note that some platforms (like GitHub READMEs) strictly sanitize SVGs, which may strip animations. If your SVG doesn't animate on GitHub, export as GIF instead.
+                </div>
+            </details>
+            <details>
+                <summary>Does it work offline?</summary>
+                <div class="faq-content">
+                    Yes. The entire conversion process relies on the local Python Pillow imaging library. No data is sent to any external server.
+                </div>
+            </details>
         </div>
     </section>
 </main>
 
 <footer>
-    <p>Open Source Project — MIT License</p>
-    <p><a href="https://github.com/Adityarai7518/ascii-profile-generator">ASCII Profile Generator on GitHub</a></p>
+    <div class="container">
+        <p>Open Source Project &mdash; MIT License</p>
+        <div class="footer-links">
+            <a href="https://github.com/Adityarai7518/ascii-profile-generator">GitHub Repository</a>
+        </div>
+    </div>
 </footer>
+
+<script>
+const themeToggle = document.getElementById('theme-toggle');
+
+function updateAria(theme) {
+    if (theme === 'light') {
+        themeToggle.setAttribute('aria-label', 'Switch to dark mode');
+        themeToggle.setAttribute('aria-pressed', 'true');
+        themeToggle.setAttribute('title', 'Switch to dark mode');
+    } else {
+        themeToggle.setAttribute('aria-label', 'Switch to light mode');
+        themeToggle.setAttribute('aria-pressed', 'false');
+        themeToggle.setAttribute('title', 'Switch to light mode');
+    }
+}
+
+// Initial state
+const currentTheme = document.documentElement.getAttribute('data-theme') || 'dark';
+updateAria(currentTheme);
+
+themeToggle.addEventListener('click', () => {
+    let theme = document.documentElement.getAttribute('data-theme');
+
+    if (theme === 'light') {
+        document.documentElement.removeAttribute('data-theme');
+        localStorage.setItem('theme', 'dark');
+        updateAria('dark');
+    } else {
+        document.documentElement.setAttribute('data-theme', 'light');
+        localStorage.setItem('theme', 'light');
+        updateAria('light');
+    }
+});
+
+function copyCode(elementId, btn) {
+    const code = document.getElementById(elementId).innerText;
+    navigator.clipboard.writeText(code).then(() => {
+        const originalText = btn.innerText;
+        btn.innerText = 'Copied!';
+        setTimeout(() => { btn.innerText = originalText; }, 2000);
+    }).catch(err => {
+        console.error('Failed to copy text: ', err);
+    });
+}
+</script>
 
 </body>
 </html>

@@ -1203,46 +1203,19 @@ def build_grid(config):
                 ),
             )
 
-            if (
-                config["mode"]
-                == "original"
-                and config["background"]
-                is None
-            ):
+            index = int(
+                density
+                * ramp_last
+                + 0.5
+            )
 
-                index = (
-                    1
-                    + int(
-                        round(
-                            density
-                            * (
-                                ramp_last
-                                - 1
-                            )
-                        )
-                    )
-                )
-
-                index = min(
+            index = max(
+                0,
+                min(
                     ramp_last,
                     index,
-                )
-
-            else:
-
-                index = int(
-                    density
-                    * ramp_last
-                    + 0.5
-                )
-
-                index = max(
-                    0,
-                    min(
-                        ramp_last,
-                        index,
-                    ),
-                )
+                ),
+            )
 
             # --------------------------------------------------
             # Colour selection
@@ -1374,23 +1347,26 @@ def build_grid(config):
 
         grid.append(row)
 
-    if not dark_mapping:
+    if config.get("mode") == "light":
         updates = []
         for y in range(config["rows"]):
             for x in range(config["cols"]):
-                if grid[y][x]["index"] == 0 and grid[y][x]["alpha"] > 0.0:
-                    visible_neighbors = 0
+                item = grid[y][x]
+                if item["index"] == 0 and item["alpha"] > 0.0:
+                    strong_neighbors = 0
                     for dy in (-1, 0, 1):
                         for dx in (-1, 0, 1):
                             if dy == 0 and dx == 0:
                                 continue
                             ny, nx = y + dy, x + dx
                             if 0 <= ny < config["rows"] and 0 <= nx < config["cols"]:
-                                if grid[ny][nx]["index"] > 0:
-                                    visible_neighbors += 1
-                    if visible_neighbors >= 5:
+                                neighbor = grid[ny][nx]
+                                # Require substantial presence to qualify as a structural neighbor
+                                if neighbor["index"] >= 1 and neighbor["alpha"] >= 0.3:
+                                    strong_neighbors += 1
+                    if strong_neighbors >= 5:
                         updates.append((x, y))
-        
+
         for x, y in updates:
             grid[y][x]["index"] = 1
 
@@ -1414,32 +1390,35 @@ def build_grid(config):
                 for y in range(config["rows"]):
                     for x in range(config["cols"]):
                         item = grid[y][x]
-                        
+
                         if item["alpha"] <= 0.0:
                             continue
-                            
-                        if (
-                            item["alpha"] < 0.50
-                            and item["index"] < 4
-                        ):
-                            visible_neighbors = 0
+
+                        # Identify weak cells that might cause visual holes
+                        if item["alpha"] < 0.65 or item["index"] < 4:
+                            strong_neighbors = 0
                             for dy in (-1, 0, 1):
                                 for dx in (-1, 0, 1):
                                     if dy == 0 and dx == 0:
                                         continue
                                     ny, nx = y + dy, x + dx
                                     if 0 <= ny < config["rows"] and 0 <= nx < config["cols"]:
-                                        if grid[ny][nx]["index"] > 0:
-                                            visible_neighbors += 1
-                                            
-                            if visible_neighbors >= 4:
-                                if item["tone"] < 0.72:
-                                    if item["alpha"] < 0.25:
-                                        item["alpha"] = 0.55
+                                        neighbor = grid[ny][nx]
+                                        # Strict criteria for what constitutes a solid subject cell
+                                        if neighbor["index"] >= 2 and neighbor["alpha"] >= 0.4:
+                                            strong_neighbors += 1
+
+                            # Only reinforce if surrounded by a solid structure
+                            if strong_neighbors >= 4:
+                                # Ensure we don't reinforce pure white highlights into blocky patches
+                                if item["tone"] < 0.95:
+                                    if item["alpha"] < 0.3:
+                                        item["alpha"] = 0.45
                                     else:
-                                        item["alpha"] = max(item["alpha"], 0.50)
-                                elif item["tone"] < 0.88:
-                                    item["alpha"] = max(item["alpha"], 0.42)
+                                        item["alpha"] = max(item["alpha"], 0.60)
+
+                                    if item["index"] == 0:
+                                        item["index"] = 1
 
     return grid
 
@@ -1492,7 +1471,7 @@ def get_twinkle_cells(cols, rows, grid, ramp_last, rng_seed=20260926):
             offset = 2
         else:
             offset = 3
-            
+
         glyph_index = min(ramp_last, item["index"] + offset)
         results.append({
             "x": x,
@@ -1735,7 +1714,7 @@ def main():
         for i, tcell in enumerate(twinkle_cells):
             x = tcell["x"]
             y = tcell["y"]
-            
+
             item = grid[y][x]
 
             px = (

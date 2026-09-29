@@ -402,27 +402,8 @@ def choose_additional():
         print()
         print("Additional")
         print("1. Flag")
-        print("b. Back")
-        print("q. Quit")
-
-        choice = command_input(
-            "\nChoose an option (1, Enter = 1): "
-        )
-
-        if choice is BACK:
-            return BACK
-
-        if choice in ("", "1"):
-            return "flag"
-
-        print("Please enter 1.")
-
-def choose_workflow():
-    while True:
-        print()
-        print("ASCII Profile Generator")
-        print("1. Custom Generation")
         print("2. GitHub Profile Preset")
+        print("b. Back")
         print("q. Quit")
 
         choice = command_input(
@@ -433,12 +414,14 @@ def choose_workflow():
             return BACK
 
         if choice in ("", "1"):
-            return "custom"
+            return "flag"
 
         if choice == "2":
             return "github"
 
         print("Please enter 1 or 2.")
+
+
 
 
 def choose_flag_theme():
@@ -1549,58 +1532,52 @@ def main():
         raise SystemExit(1)
 
     while True:
-        workflow = choose_workflow()
+        color = choose_color_mode()
 
-        if workflow is BACK:
+        if color is BACK:
             return
 
-        if workflow == "github":
-            result = run_preset(image)
-            if result is BACK:
-                continue
-            return
+        if color is ADDITIONAL:
+            while True:
+                additional = choose_additional()
 
-        while True:
-            color = choose_color_mode()
+                if additional is BACK:
+                    break
 
-            if color is BACK:
-                break
+                if additional == "github":
+                    result = run_preset(image)
+                    if result is BACK:
+                        continue
+                    return
 
-            if color is ADDITIONAL:
-                while True:
-                    additional = choose_additional()
+                if additional == "flag":
+                    while True:
+                        flag_theme = choose_flag_theme()
 
-                    if additional is BACK:
-                        break
+                        if flag_theme is BACK_TO_FLAG_THEME:
+                            break
 
-                    if additional == "flag":
-                        while True:
-                            flag_theme = choose_flag_theme()
+                        result = run_flag(
+                            image,
+                            flag_theme,
+                        )
 
-                            if flag_theme is BACK_TO_FLAG_THEME:
-                                break
+                        if result is BACK_TO_FLAG_THEME:
+                            continue
 
-                            result = run_flag(
-                                image,
-                                flag_theme,
-                            )
+                        return
 
-                            if result is BACK_TO_FLAG_THEME:
-                                continue
+            continue
 
-                            return
+        result = run_normal(
+            image,
+            color,
+        )
 
-                continue
+        if result is BACK:
+            continue
 
-            result = run_normal(
-                image,
-                color,
-            )
-
-            if result is BACK:
-                continue
-
-            return
+        return
 
 
 if __name__ == "__main__":
