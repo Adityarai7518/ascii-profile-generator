@@ -1324,7 +1324,7 @@ def build_grid(config):
 
             if (
                 config["mode"]
-                != "original"
+                not in ("original", "light")
             ):
                 # Opacity as secondary luminance cue
                 tone_opacity = (
@@ -1346,79 +1346,6 @@ def build_grid(config):
             })
 
         grid.append(row)
-
-    if config.get("mode") == "light":
-        updates = []
-        for y in range(config["rows"]):
-            for x in range(config["cols"]):
-                item = grid[y][x]
-                if item["index"] == 0 and item["alpha"] > 0.0:
-                    strong_neighbors = 0
-                    for dy in (-1, 0, 1):
-                        for dx in (-1, 0, 1):
-                            if dy == 0 and dx == 0:
-                                continue
-                            ny, nx = y + dy, x + dx
-                            if 0 <= ny < config["rows"] and 0 <= nx < config["cols"]:
-                                neighbor = grid[ny][nx]
-                                # Require substantial presence to qualify as a structural neighbor
-                                if neighbor["index"] >= 1 and neighbor["alpha"] >= 0.3:
-                                    strong_neighbors += 1
-                    if strong_neighbors >= 5:
-                        updates.append((x, y))
-
-        for x, y in updates:
-            grid[y][x]["index"] = 1
-
-        # SECOND PASS: Structural opacity correction
-        bg_rgb = None
-        if config["mode"] == "light":
-            bg_rgb = (255, 255, 255)
-        else:
-            bg_config = config.get("background")
-            if bg_config == "original":
-                bg_config = infer_original_background(config["src"])
-            if bg_config is not None and bg_config != "none":
-                try:
-                    bg_rgb = hex_rgb(bg_config)
-                except (ValueError, TypeError, IndexError):
-                    pass
-
-        if bg_rgb is not None:
-            bg_luma = 0.2126 * bg_rgb[0] + 0.7152 * bg_rgb[1] + 0.0722 * bg_rgb[2]
-            if bg_luma > 200:
-                for y in range(config["rows"]):
-                    for x in range(config["cols"]):
-                        item = grid[y][x]
-
-                        if item["alpha"] <= 0.0:
-                            continue
-
-                        # Identify weak cells that might cause visual holes
-                        if item["alpha"] < 0.65 or item["index"] < 4:
-                            strong_neighbors = 0
-                            for dy in (-1, 0, 1):
-                                for dx in (-1, 0, 1):
-                                    if dy == 0 and dx == 0:
-                                        continue
-                                    ny, nx = y + dy, x + dx
-                                    if 0 <= ny < config["rows"] and 0 <= nx < config["cols"]:
-                                        neighbor = grid[ny][nx]
-                                        # Strict criteria for what constitutes a solid subject cell
-                                        if neighbor["index"] >= 2 and neighbor["alpha"] >= 0.4:
-                                            strong_neighbors += 1
-
-                            # Only reinforce if surrounded by a solid structure
-                            if strong_neighbors >= 4:
-                                # Ensure we don't reinforce pure white highlights into blocky patches
-                                if item["tone"] < 0.95:
-                                    if item["alpha"] < 0.3:
-                                        item["alpha"] = 0.45
-                                    else:
-                                        item["alpha"] = max(item["alpha"], 0.60)
-
-                                    if item["index"] == 0:
-                                        item["index"] = 1
 
     return grid
 
