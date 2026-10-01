@@ -46,7 +46,7 @@ Background
 5. Custom HEX
 ```
 
-`Original` is the default. It does not force a new background. `Preserve Transparent (if available)` explicitly keeps transparent areas when the source provides them.
+`Original` is the default. `Preserve Transparent (if available)` keeps the ASCII canvas transparent; opaque source regions are represented by the glyphs. The separate `Original` background choice infers a solid border colour for an opaque source.
 
 ## Output Format
 
@@ -61,19 +61,30 @@ The format is selected during the same configuration flow. The program does not 
 
 ## Animations
 
-Normal animations:
+The existing choices 1–9 retain their numbers. New choices are 10 Typewriter, 11 Dissolve, and 12 Breathing. Flag Wave remains under `Additional`.
 
-- Row Reveal
-- Column Reveal
-- Diagonal Reveal
-- Iris Aperture
-- Circular Reveal
-- Fade In
-- Twinkle
-- Sparkle Wave
-- Instant
+| Animation | Visual behavior | Loop behavior |
+| --- | --- | --- |
+| Row Reveal | Uncover from top to bottom | Reveal, hold, close when looping |
+| Column Reveal | Uncover from left to right | Reveal, hold, close when looping |
+| Diagonal Reveal | Accumulate a diagonal reveal across the image | Reveal, hold, close when looping |
+| Iris Aperture | Open an eight-sided aperture | Reveal, hold, close when looping |
+| Circular Reveal | Expand a circular opening | Reveal, hold, close when looping |
+| Fade In | Fade the complete artwork into view | Reveal, hold, close when looping |
+| Twinkle | Gently dim and restore selected existing glyphs | Repeat only when requested |
+| Sparkle Wave | Move a subtle opacity band across existing glyphs | Repeat only when requested |
+| Instant | Display the complete artwork immediately | Never loops; one GIF frame |
+| Typewriter | Build each line from left to right, in reading order | Reveal, hold, close when looping |
+| Dissolve | Assemble deterministic scattered groups of characters | Reveal, hold, dissolve away when looping |
+| Breathing | Gently dim the complete image to 86% and restore it | Repeat only when requested |
+| Flag Wave | Move vertical strips with a fixed hoist edge | Always loops |
 
-Flag mode is available under `Additional`.
+All animations support all colour modes. The Flag workflow offers Original and Black & White themes. Twinkle and Sparkle Wave preserve the original characters; they do not add random symbols. Non-looping reveals finish at the complete static image. Ambient effects return to the original intensity; Flag intentionally keeps moving.
+
+Slow, Normal, and Fast use 9, 5.5, and 2.8 seconds per cycle. Flag Wave has a minimum 4-second cycle. Instant ignores speed. Looping reveals spend 65% of the cycle revealing, 15% holding the complete image, and 20% closing. GIF delays use whole hundredths of a second; identical frames may be combined without changing the total duration. SVG animation is continuous. PNG and JPEG are static regardless of the animation selection.
+
+SVG and PNG keep a transparent canvas when background is `none`, including for opaque source photos. Choose `Original` to infer a solid colour from an opaque source's border. JPEG and GIF flatten a transparent canvas to white. GIF uses a shared 256-colour palette and a maximum 640-pixel edge; SVG/Pillow font rasterization and GIF palette reduction can differ visually.
+
 
 ## Sample
 
@@ -92,6 +103,7 @@ ascii-profile-generator/
 ├── ascii_generator.py
 ├── ascii_renderer.py
 ├── exporter.py
+├── animations.py
 ├── setup.py
 ├── requirements.txt
 ├── README.md

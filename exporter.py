@@ -3,10 +3,9 @@ import argparse
 import math
 import os
 import platform
-import random
 import sys
 
-from PIL import Image, ImageChops, ImageDraw, ImageEnhance, ImageFont, ImageOps
+from PIL import Image, ImageChops, ImageDraw, ImageFont
 
 SCRIPT_DIR = os.path.dirname(
     os.path.abspath(__file__)
@@ -16,7 +15,6 @@ if SCRIPT_DIR not in sys.path:
     sys.path.insert(0, SCRIPT_DIR)
 
 from ascii_renderer import (  # noqa: E402
-    ALPHA_THRESHOLD,
     MAX_CELLS,
     MAX_CELL_H,
     MAX_CELL_W,
@@ -34,10 +32,14 @@ from ascii_renderer import (  # noqa: E402
     crop_to_cell_aspect,
     is_hex,
     load_source,
-    source_has_transparency,
     get_twinkle_cells,
-    background_is_dark,
     infer_original_background,
+)
+
+from animations import (
+    DISSOLVE_GROUPS, BREATHING_VALUES, repeats, reveal_progress,
+    group_visibility, aperture_points, flag_strips, interpolate,
+    twinkle_factor, dissolve_group, gif_timeline,
 )
 
 DEFAULT_SIZE = 1000
@@ -311,10 +313,7 @@ def render_foreground(config, grid):
     )
 
     font = find_font(
-        max(
-            8,
-            int(round(font_size)),
-        )
+        max(1, font_size)
     )
 
     for y in range(rows):
@@ -327,7 +326,9 @@ def render_foreground(config, grid):
         for x in range(cols):
             item = grid[y][x]
 
-            if item["alpha"] <= ALPHA_THRESHOLD:
+            # Source coverage was already tested by build_grid. A tone-scaled
+            # glyph opacity below that cutoff is still valid visible ink.
+            if item["alpha"] <= 0.0:
                 continue
 
             char = ramp[
@@ -405,373 +406,142 @@ def flatten_background(
     canvas.alpha_composite(foreground)
     return canvas
 
-def reveal_mask(
-    size,
-    progress,
-    animation,
-):
+def reveal_mask(size, progress, animation):
     width, height = size
-
-    mask = Image.new(
-        "L",
-        size,
-        0,
-    )
-
+    progress = max(0.0, min(1.0, progress))
+    if progress <= 0:
+        return Image.new("L", size, 0)
+    if progress >= 1:
+        return Image.new("L", size, 255)
+    mask = Image.new("L", size, 0)
     draw = ImageDraw.Draw(mask)
-
-    progress = max(
-        0.0,
-        min(1.0, progress),
-    )
-
     if animation == "row-reveal":
-        draw.rectangle(
-            (
-                0,
-                0,
-                width,
-                int(height * progress),
-            ),
-            fill=255,
-        )
-
+        draw.rectangle((0, 0, width, math.ceil(height * progress) - 1), fill=255)
     elif animation == "column-reveal":
-        draw.rectangle(
-            (
-                0,
-                0,
-                int(width * progress),
-                height,
-            ),
-            fill=255,
-        )
-
+        draw.rectangle((0, 0, math.ceil(width * progress) - 1, height), fill=255)
     elif animation == "diagonal-reveal":
-        band_width = max(
-            1.0,
-            math.hypot(width, height) * 0.22,
-        )
-        travel = width + height + band_width * 2.0
-        center_x = -height + progress * travel
-        center_y = height / 2.0
-
-        points = [
-            (-band_width, 0),
-            (band_width, 0),
-            (width + band_width, height),
-            (width - band_width, height),
-        ]
-        points = [
-            (x + center_x, y)
-            for x, y in points
-        ]
-        draw.polygon(points, fill=255)
-
-    elif animation in {
-        "aperture-reveal",
-        "circular-reveal",
-    }:
-        cx = width / 2.0
-        cy = height / 2.0
-        radius = (
-            math.hypot(
-                width,
-                height,
-            )
-            * progress
-        )
-
-        if animation == "aperture-reveal":
-            points = []
-
-            for index in range(8):
-                angle = (
-                    -math.pi / 2
-                    + index
-                    * (math.tau / 8)
-                )
-
-                points.append(
-                    (
-                        cx
-                        + math.cos(angle)
-                        * radius,
-                        cy
-                        + math.sin(angle)
-                        * radius,
-                    )
-                )
-
-            draw.polygon(
-                points,
-                fill=255,
-            )
-
-        else:
-            draw.ellipse(
-                (
-                    cx - radius,
-                    cy - radius,
-                    cx + radius,
-                    cy + radius,
-                ),
-                fill=255,
-            )
-
+        extent = (width + height) * progress
+        draw.polygon([(0, 0), (extent, 0), (0, extent)], fill=255)
+    elif animation == "aperture-reveal":
+        draw.polygon(aperture_points(width, height, progress), fill=255)
+    elif animation == "circular-reveal":
+        radius = math.hypot(width / 2, height / 2) * progress
+        draw.ellipse((width / 2 - radius, height / 2 - radius,
+                      width / 2 + radius, height / 2 + radius), fill=255)
     else:
-        draw.rectangle(
-            (
-                0,
-                0,
-                width,
-                height,
-            ),
-            fill=int(
-                255 * progress
-            ),
-        )
-
+        mask.paste(round(255 * progress), (0, 0, width, height))
     return mask
 
 
-def apply_mask(
-    foreground,
-    mask,
-):
+def apply_mask(foreground, mask):
     image = foreground.copy()
-    alpha = image.getchannel("A")
-
-    combined = Image.new(
-        "L",
-        image.size,
-        0,
-    )
-
-    # Multiply the original glyph alpha
-    # by the animation visibility mask.
-    from PIL import ImageChops
-
-    combined = ImageChops.multiply(
-        alpha,
-        mask,
-    )
-
-    image.putalpha(
-        combined
-    )
-
+    image.putalpha(ImageChops.multiply(foreground.getchannel("A"), mask))
     return image
 
 
-def apply_flag_wave(foreground, progress, strips=12):
+def cell_box(config, size, x, y):
+    full_w, full_h = canvas_size(config)
+    sx, sy = size[0] / full_w, size[1] / full_h
+    return (round((PAD + x * config["cell_w"]) * sx),
+            round((PAD + y * config["cell_h"]) * sy),
+            round((PAD + (x + 1) * config["cell_w"]) * sx),
+            round((PAD + (y + 1) * config["cell_h"]) * sy))
+
+
+def apply_flag_wave(foreground, progress, strips=12, config=None):
+    if config is None:
+        config = {"cols": strips * 6, "rows": 1,
+                  "cell_w": (foreground.width - PAD * 2) / (strips * 6),
+                  "cell_h": foreground.height - PAD * 2}
     width, height = foreground.size
-    result = Image.new("RGBA", foreground.size, (0, 0, 0, 0))
-
-    base_amplitude = max(2.0, width * 0.035)
-    for index in range(strips):
-        x0 = int(round(index * width / strips))
-        x1 = int(round((index + 1) * width / strips))
-        if x1 <= x0:
-            continue
-
-        t = index / max(1, strips - 1)
-        amplitude = base_amplitude * (t ** 1.7)
-        phase = progress * math.tau - t * math.pi * 1.4
-        dx = int(round(math.sin(phase) * amplitude))
-
+    full_w, full_h = canvas_size(config)
+    sx, sy = width / full_w, height / full_h
+    result = Image.new("RGBA", foreground.size)
+    for col0, col1, values in flag_strips(config["cols"], config["cell_h"], PAD):
+        x0 = round((PAD + col0 * config["cell_w"]) * sx)
+        x1 = round((PAD + col1 * config["cell_w"]) * sx)
+        dy = round(interpolate(values, progress) * sy)
         strip = foreground.crop((x0, 0, x1, height))
-        result.paste(strip, (x0 + dx, 0), strip)
-
+        # A straight-alpha image must not be used as its own paste mask.
+        result.alpha_composite(strip, (x0, dy))
     return result
 
 
 def apply_twinkle(foreground, config, progress, grid):
-    width, height = foreground.size
-    cols = config["cols"]
-    rows = config["rows"]
-    cell_w = config["cell_w"]
-    cell_h = config["cell_h"]
-
-    bg_config = config.get("background")
-    if config["mode"] == "dark":
-        bg_is_dark = True
-    elif config["mode"] == "light":
-        bg_is_dark = False
-    else:
-        if bg_config == "original":
-            bg_config = infer_original_background(config["src"])
-        if bg_config is not None:
-            bg_is_dark = background_is_dark(bg_config)
-        else:
-            bg_is_dark = True
-
-    ramp = config["ramp"]
-    ramp_last = len(ramp) - 1
-
-    cells = get_twinkle_cells(cols, rows, grid, ramp_last)
-    if not cells:
-        return foreground
-
-    result = foreground.copy().convert("RGBA")
-    glint_layer = Image.new("RGBA", foreground.size, (0, 0, 0, 0))
-    draw = ImageDraw.Draw(glint_layer)
-
-    font_size = min(cell_h * 0.86, cell_w / 0.60)
-    font = find_font(max(8, int(round(font_size))))
-
-    duration = {
-        "slow": 9.0,
-        "normal": 5.5,
-        "fast": 2.8,
-    }[config["speed"]]
-
-    t = progress * duration
-
-    for i, tcell in enumerate(cells):
-        x, y = tcell["x"], tcell["y"]
-        item = grid[y][x]
-        
-        delay = (i / max(1, len(cells) - 1)) * min(1.2, duration * 0.35)
-        sparkle_duration = 0.60 + (i % 5) * 0.10
-
-        try:
-            base_rgb = parse_hex(item["color"])
-        except (ValueError, TypeError, IndexError):
-            base_rgb = (17, 17, 17)
-
-        if config["mode"] == "dark":
-            enhanced_rgb = (255, 255, 255)
-        else:
-            amount = 0.88
-            if bg_is_dark:
-                enhanced_rgb = (
-                    int(base_rgb[0] + (255 - base_rgb[0]) * amount),
-                    int(base_rgb[1] + (255 - base_rgb[1]) * amount),
-                    int(base_rgb[2] + (255 - base_rgb[2]) * amount),
-                )
-            else:
-                target_r, target_g, target_b = base_rgb[0] * 0.15, base_rgb[1] * 0.15, base_rgb[2] * 0.15
-                enhanced_rgb = (
-                    int(base_rgb[0] + (target_r - base_rgb[0]) * amount),
-                    int(base_rgb[1] + (target_g - base_rgb[1]) * amount),
-                    int(base_rgb[2] + (target_b - base_rgb[2]) * amount),
-                )
-
-        intensity = 0.0
-        if t >= delay:
-            dt = t - delay
-            if config["loop"] == "yes" or dt <= sparkle_duration:
-                cycle_t = dt % sparkle_duration
-                
-                if cycle_t < 0.20 * sparkle_duration:
-                    intensity = cycle_t / (0.20 * sparkle_duration)
-                else:
-                    intensity = 1.0 - (cycle_t - 0.20 * sparkle_duration) / (0.80 * sparkle_duration)
-                
-                intensity = max(0.0, min(1.0, intensity))
-
-        char = ramp[tcell["glyph_index"]]
-
-        r = int(base_rgb[0] + (enhanced_rgb[0] - base_rgb[0]) * intensity)
-        g = int(base_rgb[1] + (enhanced_rgb[1] - base_rgb[1]) * intensity)
-        b = int(base_rgb[2] + (enhanced_rgb[2] - base_rgb[2]) * intensity)
-
-        alpha = int(round(255 * item["alpha"]))
-        baseline = PAD + y * cell_h + cell_h * 0.78
-        px = PAD + x * cell_w
-
-        draw.text(
-            (px, baseline),
-            char,
-            font=font,
-            fill=(r, g, b, alpha),
-            anchor="ls",
-        )
-
-    result.alpha_composite(glint_layer)
-    return result
+    cells = config.get("_twinkle_cells")
+    if cells is None:
+        cells = get_twinkle_cells(config["cols"], config["rows"], grid,
+                                  len(config["ramp"]) - 1, ramp=config["ramp"])
+    mask = Image.new("L", foreground.size, 255)
+    for i, cell in enumerate(cells):
+        factor = twinkle_factor(progress, i, len(cells))
+        if factor < 1:
+            mask.paste(round(255 * factor), cell_box(config, foreground.size, cell["x"], cell["y"]))
+    return apply_mask(foreground, mask)
 
 
 def apply_sparkle_wave(foreground, progress):
     width, height = foreground.size
-    stripe_width = max(24.0, height * 0.22)
-    center_x = -stripe_width + progress * (width + stripe_width * 2.0)
-
-    mask = Image.new("L", foreground.size, 0)
-    draw = ImageDraw.Draw(mask)
-    draw.rectangle(
-        (
-            center_x - stripe_width / 2.0,
-            -height,
-            center_x + stripe_width / 2.0,
-            height * 2.0,
-        ),
-        fill=210,
-    )
-    mask = mask.rotate(
-        -24,
-        resample=Image.Resampling.BICUBIC,
-        center=(width / 2.0, height / 2.0),
-        expand=False,
-    )
-
-    bright = ImageEnhance.Brightness(foreground).enhance(1.65)
-    bright_alpha = ImageChops.multiply(
-        foreground.getchannel("A"),
-        mask,
-    )
-    bright.putalpha(bright_alpha)
-
-    result = foreground.copy()
-    result.alpha_composite(bright)
-    return result
+    span = width + .35 * height
+    half = .12 * span
+    center = -half + progress * (span + 2 * half)
+    length = math.ceil(span) + 1
+    line = Image.new("L", (length, 1))
+    line.putdata([round(255 * (1 - .35 * max(0, 1 - abs(x - center) / half))) for x in range(length)])
+    field = line.resize((length, height))
+    mask = field.transform(foreground.size, Image.Transform.AFFINE,
+                           (1, .35, 0, 0, 1, 0), Image.Resampling.BILINEAR)
+    return apply_mask(foreground, mask)
 
 
-def make_gif_frame(
-    foreground,
-    background,
-    progress,
-    animation,
-    config,
-    grid,
-):
+def dissolve_map(config, size):
+    groups = Image.new("L", size)
+    for y in range(config["rows"]):
+        for x in range(config["cols"]):
+            groups.paste(dissolve_group(x, y), cell_box(config, size, x, y))
+    return groups
+
+
+def cell_reveal_mask(config, size, progress, animation):
+    if progress >= 1:
+        return Image.new("L", size, 255)
+    if progress <= 0:
+        return Image.new("L", size, 0)
+    if animation == "dissolve":
+        groups = config.get("_dissolve_map")
+        if groups is None:
+            groups = dissolve_map(config, size)
+        return groups.point([round(255 * group_visibility(progress, i, DISSOLVE_GROUPS)) for i in range(256)])
+    mask = Image.new("L", size)
+    for y in range(config["rows"]):
+        fraction = group_visibility(progress, y, config["rows"])
+        if fraction <= 0:
+            continue
+        x0, y0, _, y1 = cell_box(config, size, 0, y)
+        mask.paste(255, (0, y0, round(fraction * size[0]), y1))
+    return mask
+
+
+def make_gif_frame(foreground, background, progress, animation, config, grid):
     if animation == "flag-wave":
-        visible = apply_flag_wave(
-            foreground,
-            progress,
-        )
+        visible = apply_flag_wave(foreground, progress, config=config)
     elif animation == "twinkle":
-        visible = apply_twinkle(
-            foreground,
-            config,
-            progress,
-            grid,
-        )
+        visible = apply_twinkle(foreground, config, progress, grid)
     elif animation == "sparkle-wave":
-        visible = apply_sparkle_wave(
-            foreground,
-            progress,
-        )
+        visible = apply_sparkle_wave(foreground, progress)
+    elif animation == "breathing":
+        factor = interpolate(BREATHING_VALUES, progress)
+        visible = apply_mask(foreground, Image.new("L", foreground.size, round(255 * factor)))
     elif animation == "instant":
-        visible = foreground.copy()
+        visible = foreground
     else:
-        visible = apply_mask(
-            foreground,
-            reveal_mask(
-                foreground.size,
-                progress,
-                animation,
-            ),
-        )
-
-    if background is None:
-        background = "#ffffff"
-
-    return flatten_background(
-        visible,
-        background,
-    ).convert("RGB")
+        p = reveal_progress(progress, repeats(animation, config["loop"]))
+        if animation in {"typewriter", "dissolve"}:
+            mask = cell_reveal_mask(config, foreground.size, p, animation)
+        else:
+            mask = reveal_mask(foreground.size, p, animation)
+        visible = apply_mask(foreground, mask)
+    return flatten_background(visible, "#ffffff" if background is None else background).convert("RGB")
 
 
 def save_png(
@@ -826,85 +596,50 @@ def save_jpeg(
     return image.size
 
 
-def save_gif(
-    foreground,
-    output,
-    background,
-    animation,
-    speed,
-    loop,
-    config,
-    grid,
-):
-    if animation == "instant":
-        progress_values = [1.0]
-        repeat = False
-    else:
-        frame_count = DEFAULT_GIF_FRAMES
-        start_progress = 0.0 if animation == "twinkle" else 0.18
-        forward = [
-            start_progress
-            + (1.0 - start_progress) * index / float(frame_count - 1)
-            for index in range(frame_count)
-        ]
-        repeat = loop == "yes" or animation == "flag-wave"
-        
-        if animation == "twinkle":
-            progress_values = forward
-        else:
-            progress_values = (
-                forward + list(reversed(forward[1:-1]))
-                if repeat
-                else forward
-            )
-
+def save_gif(foreground, output, background, animation, speed, loop, config, grid):
+    # Animate at the export resolution, rather than keeping dozens of huge
+    # source-canvas RGB frames alive. Only palette frames are retained.
+    foreground = fit_image(foreground, DEFAULT_GIF_SIZE)
+    if isinstance(background, Image.Image):
+        background = background.resize(foreground.size, Image.Resampling.LANCZOS)
+    config = dict(config, animation=animation, speed=speed, loop=loop)
     if animation == "twinkle":
-        twinkle_duration_ms = {
-            "slow": 9000,
-            "normal": 5500,
-            "fast": 2800,
-        }[speed]
-        duration = max(
-            20,
-            round(twinkle_duration_ms / DEFAULT_GIF_FRAMES)
-        )
-    else:
-        duration = {
-            "slow": 180,
-            "normal": 110,
-            "fast": 70,
-        }[speed]
+        config["_twinkle_cells"] = get_twinkle_cells(config["cols"], config["rows"], grid,
+                                                    len(config["ramp"]) - 1, ramp=config["ramp"])
+    if animation == "dissolve":
+        config["_dissolve_map"] = dissolve_map(config, foreground.size)
+    positions, durations = gif_timeline(animation, speed, loop)
 
-    frames = [
-        fit_image(
-            make_gif_frame(
-                foreground,
-                background,
-                progress,
-                animation,
-                config,
-                grid,
-            ),
-            DEFAULT_GIF_SIZE,
-        )
-        for progress in progress_values
-    ]
-    os.makedirs(
-        os.path.dirname(output)
-        or ".",
-        exist_ok=True,
-    )
-    frames[0].save(
-        output,
-        "GIF",
-        save_all=True,
-        append_images=frames[1:],
-        duration=duration,
-        loop=0 if repeat else 1,
-        optimize=False,
-    )
-
+    # One shared palette avoids unrelated colour changes between frames. Train
+    # on the static image plus representative phases, including the background.
+    samples = [flatten_background(foreground, background or "#ffffff").convert("RGB")]
+    for p in (0.0, .25, .5, .75):
+        samples.append(make_gif_frame(foreground, background, p, animation, config, grid))
+    atlas = Image.new("RGB", (160 * len(samples), 160))
+    for i, sample in enumerate(samples):
+        atlas.paste(sample.resize((160, 160), Image.Resampling.NEAREST), (160 * i, 0))
+    colours = atlas.quantize(colors=256).getpalette()
+    # Fill unused slots with an existing colour: GIF otherwise pads them with
+    # black, which would introduce colours absent from the trained palette.
+    colours += colours[-3:] * ((768 - len(colours)) // 3)
+    # A fresh palette avoids retaining the atlas quantizer's RGB lookup cache.
+    palette = Image.new("P", (1, 1))
+    palette.putpalette(colours)
+    del samples
+    frames = []
+    for p in positions:
+        rgb = make_gif_frame(foreground, background, p, animation, config, grid)
+        frames.append(rgb.quantize(palette=palette, dither=Image.Dither.NONE))
+    os.makedirs(os.path.dirname(output) or ".", exist_ok=True)
+    # Keep the global palette fixed while encoding unchanged pixels as deltas.
+    # disposal=1 retains those pixels; source transparency was flattened above.
+    options = dict(save_all=True, append_images=frames[1:], duration=durations,
+                   disposal=1, optimize=True, palette=palette.getpalette())
+    if repeats(animation, loop):
+        options["loop"] = 0
+    frames[0].save(output, "GIF", **options)
     return frames[0].size
+
 
 def main():
     parser = argparse.ArgumentParser(
@@ -1038,10 +773,6 @@ def main():
         background = config["background"]
 
         if background == "original":
-            background = load_original_background(config)
-        elif background is None and not source_has_transparency(config["src"]):
-            # Preserve the original opaque background state without drawing
-            # the original source image itself.
             background = load_original_background(config)
         elif (
             background is None

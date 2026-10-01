@@ -108,6 +108,9 @@ ANIMATIONS = {
     "7": ("Twinkle", "twinkle"),
     "8": ("Sparkle Wave", "sparkle-wave"),
     "9": ("Instant", "instant"),
+    "10": ("Typewriter", "typewriter"),
+    "11": ("Dissolve", "dissolve"),
+    "12": ("Breathing", "breathing"),
 }
 
 
@@ -477,9 +480,12 @@ def choose_animation(default_choice="1"):
             "4": "Iris Aperture    - camera aperture open/close",
             "5": "Circular Reveal  - centre → outside",
             "6": "Fade In          - gradual appearance",
-            "7": "Twinkle          - scattered ASCII sparkles",
-            "8": "Sparkle Wave     - smooth travelling highlight wave",
+            "7": "Twinkle          - subtle shimmer on existing characters",
+            "8": "Sparkle Wave     - soft travelling shimmer",
             "9": "Instant          - no animation",
+            "10": "Typewriter       - build in reading order",
+            "11": "Dissolve         - ordered scattered assembly",
+            "12": "Breathing        - subtle intensity cycle",
         }
 
         for key in ANIMATIONS:
@@ -489,7 +495,7 @@ def choose_animation(default_choice="1"):
         print("q. Quit")
 
         choice = command_input(
-            f"\nChoose an option (1-9, Enter = {default_choice}): "
+            f"\nChoose an option (1-12, Enter = {default_choice}): "
         )
 
         if choice is BACK:
@@ -1328,7 +1334,7 @@ def run_preset(image):
     values = {
         "color": {
             "mode": "original",
-            "background": None, # Transparent fallback to source/SVG defaults
+            "background": None, # Transparent canvas in SVG and PNG
             "foreground": "#111111",
             "palette": [],
             "palette_name": "",

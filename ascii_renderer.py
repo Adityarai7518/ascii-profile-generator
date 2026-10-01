@@ -21,18 +21,12 @@ VALID_MODES = {
     "multicolour",
 }
 
-VALID_ANIMATIONS = {
-    "row-reveal",
-    "column-reveal",
-    "diagonal-reveal",
-    "aperture-reveal",
-    "circular-reveal",
-    "fade",
-    "twinkle",
-    "sparkle-wave",
-    "flag-wave",
-    "instant",
-}
+from animations import (
+    VALID_ANIMATIONS, SPEED_SETTINGS, DISSOLVE_GROUPS, BREATHING_VALUES,
+    repeats, duration, reveal_progress, reveal_times, group_visibility,
+    twinkle_window, twinkle_factor, dissolve_group, aperture_points, flag_strips,
+)
+
 
 VALID_SPEEDS = {
     "slow",
@@ -75,22 +69,6 @@ DEFAULT_GAMMA = 1.00
 # --------------------------------------------------
 # Animation timing
 # --------------------------------------------------
-
-SPEED_SETTINGS = {
-    "slow": {
-        "reveal": 9.0,
-        "loop": 9.0,
-    },
-    "normal": {
-        "reveal": 5.5,
-        "loop": 5.5,
-    },
-    "fast": {
-        "reveal": 2.8,
-        "loop": 3.0,
-    },
-}
-
 
 # --------------------------------------------------
 # Validation helpers
@@ -694,6 +672,22 @@ def infer_original_background(src):
     b = sorted(value[2] for value in means)[count // 2]
     return rgb_to_hex((r, g, b))
 
+
+def density_to_index(density, ramp, source_density=0.0):
+    last = len(ramp) - 1
+    index = max(0, min(last, int(density * last + 0.5)))
+
+    # Nearest rounding gives the blank glyph a nonzero density interval.
+    # Reserve that leading blank interval for zero signal. The pre-normalized
+    # tone also matters: percentile clipping can erase nonzero source tone.
+    # Choose the nearest nonblank level only in this interval; all other bins
+    # (including intentional spaces later in a custom ramp) stay unchanged.
+    if (density > 0.0 or source_density > 0.0) and not ramp[:index + 1].strip():
+        index = next(i for i, char in enumerate(ramp) if not char.isspace())
+
+    return index
+
+
 def build_grid(config):
 
     source = load_source(
@@ -732,13 +726,21 @@ def build_grid(config):
         )
     )
 
-    gray_original = (
-        ImageEnhance.Contrast(
-            gray_original
-        ).enhance(
-            config["contrast"]
+    if alpha_original.getextrema()[0] < 255:
+        # Invisible RGB must not move the contrast pivot. Weight partial
+        # coverage as well; a binary mask would overcount antialiased edges.
+        alpha_sum = sum(alpha_original.getdata())
+        mean = (
+            sum(value * coverage for value, coverage in
+                zip(gray_original.getdata(), alpha_original.getdata())) / alpha_sum
+            if alpha_sum else 0.0
         )
-    )
+        gray_original = Image.blend(
+            Image.new("L", gray_original.size, int(mean + 0.5)),
+            gray_original, config["contrast"],
+        )
+    else:
+        gray_original = ImageEnhance.Contrast(gray_original).enhance(config["contrast"])
 
     gray = (
         gray_original.crop(
@@ -1127,9 +1129,6 @@ def build_grid(config):
         dark_mapping = False
 
     ramp = config["ramp"]
-    ramp_last = (
-        len(ramp) - 1
-    )
 
     grid = []
 
@@ -1203,19 +1202,12 @@ def build_grid(config):
                 ),
             )
 
-            index = int(
-                density
-                * ramp_last
-                + 0.5
+            source_density = (
+                raw_luma[y][x]
+                if dark_mapping
+                else 1.0 - raw_luma[y][x]
             )
-
-            index = max(
-                0,
-                min(
-                    ramp_last,
-                    index,
-                ),
-            )
+            index = density_to_index(density, ramp, source_density)
 
             # --------------------------------------------------
             # Colour selection
@@ -1324,7 +1316,7 @@ def build_grid(config):
 
             if (
                 config["mode"]
-                not in ("original", "light")
+                not in ("original", "light", "multicolour")
             ):
                 # Opacity as secondary luminance cue
                 tone_opacity = (
@@ -1358,12 +1350,13 @@ def esc(text):
     return html.escape(text)
 
 
-def get_twinkle_cells(cols, rows, grid, ramp_last, rng_seed=20260926):
+def get_twinkle_cells(cols, rows, grid, ramp_last, rng_seed=20260926, ramp=None):
     cells = [
         (x, y)
         for y in range(rows)
         for x in range(cols)
-        if grid[y][x]["alpha"] > ALPHA_THRESHOLD and grid[y][x]["index"] > 0
+        if grid[y][x]["alpha"] > 0.0
+        and (not ramp[grid[y][x]["index"]].isspace() if ramp is not None else grid[y][x]["index"] > 0)
     ]
 
     if not cells:
@@ -1390,16 +1383,7 @@ def get_twinkle_cells(cols, rows, grid, ramp_last, rng_seed=20260926):
     results = []
     for x, y in cells:
         item = grid[y][x]
-        cell_rng = random.Random(f"{rng_seed}_{x}_{y}")
-        choice = cell_rng.random()
-        if choice < 0.25:
-            offset = 1
-        elif choice < 0.75:
-            offset = 2
-        else:
-            offset = 3
-
-        glyph_index = min(ramp_last, item["index"] + offset)
+        glyph_index = item["index"]
         results.append({
             "x": x,
             "y": y,
@@ -1409,1139 +1393,158 @@ def get_twinkle_cells(cols, rows, grid, ramp_last, rng_seed=20260926):
     return results
 
 
-def main():
-
-    config = parse_args()
-
-    grid = build_grid(
-        config
-    )
-
-    cols = config["cols"]
-    rows = config["rows"]
-
-    cell_w = config["cell_w"]
-    cell_h = config["cell_h"]
-
-    ramp = config["ramp"]
-    ramp_last = len(ramp) - 1
-
-    art_w = (
-        cols * cell_w
-    )
-
-    art_h = (
-        rows * cell_h
-    )
-
-    canvas_w = (
-        art_w
-        + PAD * 2
-    )
-
-    canvas_h = (
-        art_h
-        + PAD * 2
-    )
-
-    timing = SPEED_SETTINGS[
-        config["speed"]
-    ]
-
-    repeat = (
-        config["loop"]
-        == "yes"
-    )
-
-    repeat_attr = (
-        'repeatCount="indefinite"'
-        if repeat
-        else 'fill="freeze"'
-    )
-
-    font_size = min(
-        cell_h * 0.86,
-        cell_w / 0.60,
-    )
-
-    glyph_width = (
-        font_size * 0.60
-    )
-
-    letter_spacing = max(
-        0.0,
-        cell_w - glyph_width,
-    )
-
-    def row_y(y):
-        return (
-            PAD
-            + y * cell_h
-            + cell_h * 0.78
-        )
-
-    def cell_span(item):
-        if (
-            item["alpha"]
-            <= ALPHA_THRESHOLD
-        ):
-            return " "
-
-        char = ramp[
-            item["index"]
-        ]
-
-        if char == " ":
-            return " "
-
-        return (
-            f'<tspan '
-            f'fill="{item["color"]}" '
-            f'opacity="{item["alpha"]:.3f}">'
-            f'{esc(char)}'
-            f'</tspan>'
-        )
-
-    def row_text(y):
-        spans = [
-            cell_span(item)
-            for item in grid[y]
-        ]
-
-        return (
-            f'<text '
-            f'x="{PAD}" '
-            f'y="{row_y(y):.1f}" '
-            f'font-size="{font_size:.1f}" '
-            f'letter-spacing="{letter_spacing:.3f}" '
-            f'xml:space="preserve">'
-            f'{"".join(spans)}'
-            f'</text>'
-        )
-
-    def row_slice_text(
-        y,
-        x0,
-        x1,
-    ):
-        spans = [
-            cell_span(
-                grid[y][x]
-            )
-            for x in range(
-                x0,
-                x1,
-            )
-        ]
-
-        return (
-            f'<text '
-            f'x="{PAD + x0 * cell_w}" '
-            f'y="{row_y(y):.1f}" '
-            f'font-size="{font_size:.1f}" '
-            f'letter-spacing="{letter_spacing:.3f}" '
-            f'xml:space="preserve">'
-            f'{"".join(spans)}'
-            f'</text>'
-        )
-
-    def render_base():
-        return "".join(
-            row_text(y)
-            for y in range(
-                rows
-            )
-        )
-
-    def highlight_color(
-        item,
-        amount=0.88,
-    ):
-        if config["mode"] == "dark":
-            bg_is_dark = True
-        elif config["mode"] == "light":
-            bg_is_dark = False
-        else:
-            if background is not None:
-                bg_is_dark = background_is_dark(background)
-            else:
-                bg_is_dark = True
-
-        r, g, b = hex_rgb(item["color"])
-
-        if bg_is_dark:
-            return rgb_to_hex(
-                (
-                    r + (255 - r) * amount,
-                    g + (255 - g) * amount,
-                    b + (255 - b) * amount,
-                )
-            )
-        else:
-            target_r, target_g, target_b = r * 0.15, g * 0.15, b * 0.15
-            return rgb_to_hex(
-                (
-                    r + (target_r - r) * amount,
-                    g + (target_g - g) * amount,
-                    b + (target_b - b) * amount,
-                )
-            )
-
-    def denser(
-        index,
-        amount=2,
-    ):
-        return ramp[
-            min(
-                ramp_last,
-                index + amount,
-            )
-        ]
-
-    def visible_cells():
-        return [
-            (x, y)
-            for y in range(
-                rows
-            )
-            for x in range(
-                cols
-            )
-            if (
-                grid[y][x]["alpha"]
-                > ALPHA_THRESHOLD
-                and
-                grid[y][x]["index"]
-                > 0
-            )
-        ]
-
-    # --------------------------------------------------
-    # Twinkle
-    # --------------------------------------------------
-
-    def twinkle():
-
-        twinkle_cells = get_twinkle_cells(
-            cols,
-            rows,
-            grid,
-            ramp_last,
-        )
-
-        if not twinkle_cells:
-            return ""
-
-        parts = []
-
-        duration = timing[
-            "loop"
-        ]
-
-        for i, tcell in enumerate(twinkle_cells):
-            x = tcell["x"]
-            y = tcell["y"]
-
-            item = grid[y][x]
-
-            px = (
-                PAD
-                + x * cell_w
-            )
-
-            py = row_y(y)
-
-            char = ramp[tcell["glyph_index"]]
-
-            color = highlight_color(
-                item
-            )
-
-            delay = (
-                i
-                / max(1, len(twinkle_cells) - 1)
-                * min(
-                    1.2,
-                    duration * 0.35,
-                )
-            )
-
-            sparkle_duration = (
-                0.60
-                + (i % 5) * 0.10
-            )
-
-            base_color = item["color"]
-            base_opacity = item["alpha"]
-
-            parts.append(
-                f'<text '
-                f'x="{px}" '
-                f'y="{py:.1f}" '
-                f'fill="{base_color}" '
-                f'font-size="'
-                f'{font_size:.1f}" '
-                f'opacity="{base_opacity:.3f}">'
-                f'{esc(char)}'
-                f'<animate '
-                f'attributeName="fill" '
-                f'values="{base_color};{color};{base_color}" '
-                f'keyTimes="0;0.2;1" '
-                f'dur="{sparkle_duration:.2f}s" '
-                f'begin="{delay:.3f}s" '
-                f'{repeat_attr}/>'
-                f'</text>'
-            )
-
-        return "".join(
-            parts
-        )
-
-    # --------------------------------------------------
-    # Sparkle Wave
-    # --------------------------------------------------
-
-    def sparkle_wave():
-
-        stripe_width = max(
-            cell_w * 5.0,
-            canvas_h * 0.22,
-        )
-
-        duration = timing[
-            "loop"
-        ]
-
-        start_x = (
-            -stripe_width
-            - canvas_h * 0.5
-        )
-
-        end_x = (
-            canvas_w
-            + stripe_width
-            + canvas_h * 0.5
-        )
-
-        if repeat:
-
-            x_values = (
-                f"{start_x:.1f};"
-                f"{end_x:.1f};"
-                f"{start_x:.1f}"
-            )
-
-            x_times = (
-                "0;0.72;1"
-            )
-
-        else:
-
-            x_values = (
-                f"{start_x:.1f};"
-                f"{end_x:.1f}"
-            )
-
-            x_times = "0;1"
-
-        cells = visible_cells()
-
-        limit = min(120, max(30, cols * rows // 70))
-        if len(cells) > limit:
-            step = (len(cells) - 1) / max(1, limit - 1)
-            cells = [
-                cells[int(round(i * step))]
-                for i in range(limit)
-            ]
-
-        highlight_parts = []
-
-        for x, y in cells:
-
-            item = grid[y][x]
-
-            char = denser(
-                item["index"],
-                2,
-            )
-
-            px = (
-                PAD
-                + x * cell_w
-            )
-
-            py = row_y(y)
-
-            color = highlight_color(
-                item,
-                0.82,
-            )
-
-            highlight_parts.append(
-                f'<text '
-                f'x="{px}" '
-                f'y="{py:.1f}" '
-                f'fill="{color}" '
-                f'opacity="{min(1.0, item["alpha"] * 1.10):.3f}" '
-                f'font-size="{font_size:.1f}">'
-                f'{esc(char)}'
-                f'</text>'
-            )
-
-        return (
-            f'<clipPath '
-            f'id="sparkle-wave-clip">'
-            f'<rect '
-            f'x="{start_x:.1f}" '
-            f'y="{-canvas_h:.1f}" '
-            f'width="{stripe_width:.1f}" '
-            f'height="{canvas_h * 3:.1f}" '
-            f'transform="rotate('
-            f'-24 '
-            f'{canvas_w / 2:.1f} '
-            f'{canvas_h / 2:.1f})">'
-            f'<animate '
-            f'attributeName="x" '
-            f'values="{x_values}" '
-            f'keyTimes="{x_times}" '
-            f'dur="{duration:.2f}s" '
-            f'{repeat_attr}/>'
-            f'</rect>'
-            f'</clipPath>'
-            f'<g '
-            f'clip-path="url(#sparkle-wave-clip)">'
-            f'{"".join(highlight_parts)}'
-            f'</g>'
-        )
-
-    # --------------------------------------------------
-    # Iris Aperture
-    # --------------------------------------------------
-
-    def polygon_points(
-        cx,
-        cy,
-        radius,
-        sides=8,
-        rotation=-22.5,
-    ):
-        points = []
-
-        for i in range(
-            sides
-        ):
-
-            angle = math.radians(
-                rotation
-                + i
-                * (
-                    360.0
-                    / sides
-                )
-            )
-
-            x = (
-                cx
-                + math.cos(angle)
-                * radius
-            )
-
-            y = (
-                cy
-                + math.sin(angle)
-                * radius
-            )
-
-            points.append(
-                f"{x:.1f},{y:.1f}"
-            )
-
-        return " ".join(
-            points
-        )
-
-    def iris_reveal():
-
-        cx = (
-            canvas_w / 2
-        )
-
-        cy = (
-            canvas_h / 2
-        )
-
-        closed_radius = 1.5
-
-        open_radius = (
-            math.hypot(
-                canvas_w / 2,
-                canvas_h / 2,
-            )
-            * 1.08
-        )
-
-        closed = polygon_points(
-            cx,
-            cy,
-            closed_radius,
-        )
-
-        opened = polygon_points(
-            cx,
-            cy,
-            open_radius,
-        )
-
-        if repeat:
-
-            point_values = (
-                f"{closed};"
-                f"{opened};"
-                f"{closed}"
-            )
-
-            point_times = (
-                "0;0.72;1"
-            )
-
-            rotation_values = (
-                "0;7;0"
-            )
-
-            rotation_times = (
-                "0;0.72;1"
-            )
-
-        else:
-
-            point_values = (
-                f"{closed};"
-                f"{opened}"
-            )
-
-            point_times = "0;1"
-
-            rotation_values = (
-                "0;7"
-            )
-
-            rotation_times = "0;1"
-
-        return (
-            f'<clipPath '
-            f'id="iris-reveal">'
-            f'<polygon '
-            f'points="{closed}">'
-            f'<animate '
-            f'attributeName="points" '
-            f'values="{point_values}" '
-            f'keyTimes="{point_times}" '
-            f'dur="{timing["reveal"]:.2f}s" '
-            f'{repeat_attr}/>'
-            f'<animateTransform '
-            f'attributeName="transform" '
-            f'type="rotate" '
-            f'values="'
-            f'{rotation_values}" '
-            f'keyTimes="'
-            f'{rotation_times}" '
-            f'dur="{timing["reveal"]:.2f}s" '
-            f'{repeat_attr} '
-            f'additive="sum"/>'
-            f'</polygon>'
-            f'</clipPath>'
-            f'<g '
-            f'clip-path="'
-            f'url(#iris-reveal)">'
-            f'{render_base()}'
-            f'</g>'
-        )
-
-    # --------------------------------------------------
-    # Flag Wave
-    # --------------------------------------------------
-
-    def flag_wave():
-
-        duration = max(
-            4.0,
-            timing["loop"],
-        )
-
-        # Only a small number of vertical
-        # fabric strips are animated.
-        # This keeps the SVG practical while
-        # retaining a convincing travelling wave.
-        strip_count = min(
-            20,
-            max(
-                8,
-                cols // 6,
-            ),
-        )
-
-        strip_width = (
-            cols
-            / strip_count
-        )
-
-        parts = []
-
-        for strip in range(
-            strip_count
-        ):
-
-            x0 = int(
-                round(
-                    strip
-                    * strip_width
-                )
-            )
-
-            x1 = int(
-                round(
-                    (strip + 1)
-                    * strip_width
-                )
-            )
-
-            x0 = max(
-                0,
-                min(
-                    cols - 1,
-                    x0,
-                ),
-            )
-
-            x1 = max(
-                x0 + 1,
-                min(
-                    cols,
-                    x1,
-                ),
-            )
-
-            center_x = (
-                (
-                    x0
-                    + x1
-                    - 1
-                )
-                / 2.0
-            )
-
-            progress = (
-                center_x
-                / max(
-                    1,
-                    cols - 1,
-                )
-            )
-
-            # Keep the hoist/pole nearly
-            # stable and make the free edge
-            # move more strongly.
-            fabric_progress = max(
-                0.0,
-                (
-                    progress
-                    - 0.16
-                )
-                / 0.84,
-            )
-
-            amplitude = (
-                fabric_progress
-                ** 1.65
-            ) * (
-                cell_h * 1.25
-            )
-
-            # Slightly different phase
-            # for every strip creates
-            # the travelling fabric wave.
-            phase = (
-                progress
-                * duration
-                * 0.80
-            )
-
-            strip_parts = []
-
-            for y in range(
-                rows
-            ):
-                strip_parts.append(
-                    row_slice_text(
-                        y,
-                        x0,
-                        x1,
-                    )
-                )
-
-            if repeat:
-
-                values = (
-                    "0,0;"
-                    f"0,{-amplitude:.2f};"
-                    "0,0;"
-                    f"0,{amplitude:.2f};"
-                    "0,0"
-                )
-
-                key_times = (
-                    "0;0.25;0.5;0.75;1"
-                )
-
-            else:
-
-                values = (
-                    "0,0;"
-                    f"0,{-amplitude:.2f};"
-                    f"0,{-amplitude * 0.35:.2f};"
-                    "0,0"
-                )
-
-                key_times = (
-                    "0;0.35;0.72;1"
-                )
-
-            parts.append(
-                f'<g '
-                f'transform="translate(0,0)">'
-                f'{"".join(strip_parts)}'
-                f'<animateTransform '
-                f'attributeName="transform" '
-                f'type="translate" '
-                f'values="{values}" '
-                f'keyTimes="{key_times}" '
-                f'dur="{duration:.2f}s" '
-                f'begin="-{phase:.3f}s" '
-                f'{repeat_attr}/>'
-                f'</g>'
-            )
-
-        return "".join(
-            parts
-        )
-
-    # --------------------------------------------------
-    # SVG document
-    # --------------------------------------------------
-
-    background = (
-        config["background"]
-    )
-
-    parts = [
-        f'<svg '
-        f'xmlns="http://www.w3.org/2000/svg" '
-        f'width="{canvas_w}" '
-        f'height="{canvas_h}" '
-        f'viewBox="'
-        f'0 0 {canvas_w} {canvas_h}" '
-        f'font-family="Menlo, '
-        f'SFMono-Regular, Consolas, '
-        f'monospace">'
-    ]
-
+def render_svg(config, grid):
+    """Serialize the authoritative grid once, then animate its existing ink."""
+    cols, rows = config["cols"], config["rows"]
+    cw, ch = config["cell_w"], config["cell_h"]
+    width, height = cols * cw + PAD * 2, rows * ch + PAD * 2
+    ramp, animation = config["ramp"], config["animation"]
+    repeat = repeats(animation, config["loop"])
+    seconds = duration(animation, config["speed"])
+    repeat_attr = 'repeatCount="indefinite"' if repeat else 'fill="freeze"'
+    font_size = min(ch * .86, cw / .60)
+    background = config["background"]
     if background == "original":
-        background = infer_original_background(
-            config["src"]
-        )
+        background = infer_original_background(config["src"])
 
+    def animate(attribute, values, times, transform=False, extra=""):
+        tag = "animateTransform" if transform else "animate"
+        return (f'<{tag} attributeName="{attribute}" values="{";".join(map(str, values))}" '
+                f'keyTimes="{";".join(f"{t:.9f}" for t in times)}" '
+                f'dur="{seconds:.3f}s" {repeat_attr} {extra}/>')
+
+    twinkles = {}
+    if animation == "twinkle":
+        cells = get_twinkle_cells(cols, rows, grid, len(ramp) - 1, ramp=ramp)
+        twinkles = {(cell["x"], cell["y"]): (i, len(cells)) for i, cell in enumerate(cells)}
+
+    dissolve_rows = None
+    if animation == "dissolve":
+        dissolve_rows = [[[] for _ in range(rows)] for _ in range(DISSOLVE_GROUPS)]
+        for y in range(rows):
+            for x in range(cols):
+                dissolve_rows[dissolve_group(x, y)][y].append(x)
+
+    def row_text(y, x0=0, x1=None, group=None):
+        spans = []
+        columns = dissolve_rows[group][y] if group is not None else range(x0, cols if x1 is None else x1)
+        for x in columns:
+            item = grid[y][x]
+            char = ramp[item["index"]]
+            if item["alpha"] <= 0 or char.isspace():
+                continue
+            effect = ""
+            if (x, y) in twinkles:
+                i, count = twinkles[x, y]
+                times = sorted({0.0, *twinkle_window(i, count), 1.0})
+                values = [f'{item["alpha"] * twinkle_factor(t, i, count):.6f}' for t in times]
+                effect = animate("opacity", values, times)
+            # Explicit positions avoid cumulative font/fallback advance errors.
+            spans.append(f'<tspan x="{PAD + x * cw:.3f}" fill="{item["color"]}" '
+                         f'opacity="{item["alpha"]:.6f}">{esc(char)}{effect}</tspan>')
+        if not spans:
+            return ""
+        return (f'<text y="{PAD + y * ch + ch * .78:.3f}" xml:space="preserve">'
+                + "".join(spans) + '</text>')
+
+    def base():
+        return "".join(row_text(y) for y in range(rows))
+
+    def points(values):
+        return " ".join(f"{x:.4f},{y:.4f}" for x, y in values)
+
+    parts = [f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}" '
+             f'viewBox="0 0 {width} {height}" font-family="Menlo, SFMono-Regular, Consolas, monospace" '
+             f'font-size="{font_size:.3f}" font-kerning="none" style="font-variant-ligatures:none">']
     if background is not None:
-        parts.append(
-            f'<rect '
-            f'width="{canvas_w}" '
-            f'height="{canvas_h}" '
-            f'fill="{background}"/>'
-        )
+        parts.append(f'<rect width="{width}" height="{height}" fill="{background}"/>')
+    times = reveal_times(repeat=repeat)
+    progress = [reveal_progress(t, repeat) for t in times]
 
-    content = render_base()
-
-    animation = config[
-        "animation"
-    ]
-
-    reveal_duration = timing[
-        "reveal"
-    ]
-
-    # --------------------------------------------------
-    # Instant
-    # --------------------------------------------------
-
-    if animation == "instant":
-
-        parts.append(
-            content
-        )
-
-    # --------------------------------------------------
-    # Flag
-    # --------------------------------------------------
-
-    elif animation == "flag-wave":
-
-        parts.append(
-            flag_wave()
-        )
-
-    # --------------------------------------------------
-    # Fade
-    # --------------------------------------------------
-
+    if animation in {"instant", "twinkle"}:
+        parts.append(base())
     elif animation == "fade":
-
-        duration = timing[
-            "loop"
-        ]
-
-        if repeat:
-
-            values = (
-                "0;1;1;0"
-            )
-
-            key_times = (
-                "0;0.35;0.78;1"
-            )
-
+        parts.append('<g opacity="0">' + base() + animate("opacity", progress, times) + '</g>')
+    elif animation == "breathing":
+        times = [i / (len(BREATHING_VALUES) - 1) for i in range(len(BREATHING_VALUES))]
+        parts.append('<g>' + base() + animate("opacity", BREATHING_VALUES, times) + '</g>')
+    elif animation in {"row-reveal", "column-reveal", "diagonal-reveal", "aperture-reveal", "circular-reveal"}:
+        if animation == "row-reveal":
+            shape = (f'<rect width="{width}" height="0">' +
+                     animate("height", [height * p for p in progress], times) + '</rect>')
+        elif animation == "column-reveal":
+            shape = (f'<rect width="0" height="{height}">' +
+                     animate("width", [width * p for p in progress], times) + '</rect>')
+        elif animation == "diagonal-reveal":
+            values = [points([(0, 0), ((width + height) * p, 0), (0, (width + height) * p)]) for p in progress]
+            shape = '<polygon points="0,0 0,0 0,0">' + animate("points", values, times) + '</polygon>'
+        elif animation == "aperture-reveal":
+            values = [points(aperture_points(width, height, p)) for p in progress]
+            shape = f'<polygon points="{values[0]}">' + animate("points", values, times) + '</polygon>'
         else:
-
-            values = "0;1"
-            key_times = "0;1"
-
-        parts.append(
-            f'<g opacity="0">'
-            f'{content}'
-            f'<animate '
-            f'attributeName="opacity" '
-            f'values="{values}" '
-            f'keyTimes="{key_times}" '
-            f'dur="{duration:.2f}s" '
-            f'{repeat_attr}/>'
-            f'</g>'
-        )
-
-    # --------------------------------------------------
-    # Row
-    # --------------------------------------------------
-
-    elif animation == "row-reveal":
-
-        if repeat:
-
-            values = (
-                f"0;{canvas_h};0"
-            )
-
-            key_times = (
-                "0;0.72;1"
-            )
-
-        else:
-
-            values = (
-                f"0;{canvas_h}"
-            )
-
-            key_times = "0;1"
-
-        parts.append(
-            f'<clipPath '
-            f'id="row-reveal">'
-            f'<rect '
-            f'x="0" y="0" '
-            f'width="{canvas_w}" '
-            f'height="0">'
-            f'<animate '
-            f'attributeName="height" '
-            f'values="{values}" '
-            f'keyTimes="{key_times}" '
-            f'dur="{reveal_duration:.2f}s" '
-            f'{repeat_attr}/>'
-            f'</rect>'
-            f'</clipPath>'
-            f'<g '
-            f'clip-path="url(#row-reveal)">'
-            f'{content}'
-            f'</g>'
-        )
-
-    # --------------------------------------------------
-    # Column
-    # --------------------------------------------------
-
-    elif animation == "column-reveal":
-
-        if repeat:
-
-            values = (
-                f"0;{canvas_w};0"
-            )
-
-            key_times = (
-                "0;0.72;1"
-            )
-
-        else:
-
-            values = (
-                f"0;{canvas_w}"
-            )
-
-            key_times = "0;1"
-
-        parts.append(
-            f'<clipPath '
-            f'id="column-reveal">'
-            f'<rect '
-            f'x="0" y="0" '
-            f'width="0" '
-            f'height="{canvas_h}">'
-            f'<animate '
-            f'attributeName="width" '
-            f'values="{values}" '
-            f'keyTimes="{key_times}" '
-            f'dur="{reveal_duration:.2f}s" '
-            f'{repeat_attr}/>'
-            f'</rect>'
-            f'</clipPath>'
-            f'<g '
-            f'clip-path="'
-            f'url(#column-reveal)">'
-            f'{content}'
-            f'</g>'
-        )
-
-    # --------------------------------------------------
-    # Diagonal
-    # --------------------------------------------------
-
-    elif animation == "diagonal-reveal":
-
-        diagonal = math.hypot(
-            canvas_w,
-            canvas_h,
-        )
-
-        cx = (
-            canvas_w / 2
-        )
-
-        cy = (
-            canvas_h / 2
-        )
-
-        if repeat:
-
-            values = (
-                f"0;"
-                f"{diagonal * 2:.1f};"
-                f"0"
-            )
-
-            key_times = (
-                "0;0.72;1"
-            )
-
-        else:
-
-            values = (
-                f"0;"
-                f"{diagonal * 2:.1f}"
-            )
-
-            key_times = "0;1"
-
-        parts.append(
-            f'<clipPath '
-            f'id="diagonal-reveal">'
-            f'<rect '
-            f'x="{-diagonal:.1f}" '
-            f'y="{-diagonal:.1f}" '
-            f'width="0" '
-            f'height="{diagonal * 2:.1f}" '
-            f'transform="rotate('
-            f'45 '
-            f'{cx:.1f} '
-            f'{cy:.1f})">'
-            f'<animate '
-            f'attributeName="width" '
-            f'values="{values}" '
-            f'keyTimes="{key_times}" '
-            f'dur="{reveal_duration:.2f}s" '
-            f'{repeat_attr}/>'
-            f'</rect>'
-            f'</clipPath>'
-            f'<g '
-            f'clip-path="'
-            f'url(#diagonal-reveal)">'
-            f'{content}'
-            f'</g>'
-        )
-
-    # --------------------------------------------------
-    # Iris Aperture
-    # --------------------------------------------------
-
-    elif animation == "aperture-reveal":
-
-        parts.append(
-            iris_reveal()
-        )
-
-    # --------------------------------------------------
-    # Circular
-    # --------------------------------------------------
-
-    elif animation == "circular-reveal":
-
-        radius = math.hypot(
-            canvas_w / 2,
-            canvas_h / 2,
-        )
-
-        cx = (
-            canvas_w / 2
-        )
-
-        cy = (
-            canvas_h / 2
-        )
-
-        if repeat:
-
-            values = (
-                f"0;"
-                f"{radius:.1f};"
-                f"0"
-            )
-
-            key_times = (
-                "0;0.72;1"
-            )
-
-        else:
-
-            values = (
-                f"0;"
-                f"{radius:.1f}"
-            )
-
-            key_times = "0;1"
-
-        parts.append(
-            f'<clipPath '
-            f'id="circular-reveal">'
-            f'<circle '
-            f'cx="{cx:.1f}" '
-            f'cy="{cy:.1f}" '
-            f'r="0">'
-            f'<animate '
-            f'attributeName="r" '
-            f'values="{values}" '
-            f'keyTimes="{key_times}" '
-            f'dur="{reveal_duration:.2f}s" '
-            f'{repeat_attr}/>'
-            f'</circle>'
-            f'</clipPath>'
-            f'<g '
-            f'clip-path="'
-            f'url(#circular-reveal)">'
-            f'{content}'
-            f'</g>'
-        )
-
-    # --------------------------------------------------
-    # Twinkle
-    # --------------------------------------------------
-
-    elif animation == "twinkle":
-
-        parts.append(
-            content
-        )
-
-        parts.append(
-            twinkle()
-        )
-
-    # --------------------------------------------------
-    # Sparkle Wave
-    # --------------------------------------------------
-
+            values = [math.hypot(width / 2, height / 2) * p for p in progress]
+            shape = f'<circle cx="{width / 2}" cy="{height / 2}" r="0">' + animate("r", values, times) + '</circle>'
+        parts.append('<defs><clipPath id="reveal">' + shape + '</clipPath></defs>' +
+                     '<g clip-path="url(#reveal)">' + base() + '</g>')
+    elif animation == "typewriter":
+        for y in range(rows):
+            times = reveal_times(y / rows, (y + 1) / rows, repeat)
+            values = [width * group_visibility(reveal_progress(t, repeat), y, rows) for t in times]
+            # Each group contains one row, so full-canvas clipping also keeps
+            # accents and fallback glyph overhang intact at the final state.
+            parts.append(f'<clipPath id="row-{y}"><rect x="0" y="0" '
+                         f'width="0" height="{height}">' + animate("width", values, times) + '</rect></clipPath>' +
+                         f'<g clip-path="url(#row-{y})">' + row_text(y) + '</g>')
+    elif animation == "dissolve":
+        for group in range(DISSOLVE_GROUPS):
+            times = reveal_times(group / DISSOLVE_GROUPS, (group + 1) / DISSOLVE_GROUPS, repeat)
+            values = [group_visibility(reveal_progress(t, repeat), group, DISSOLVE_GROUPS) for t in times]
+            content = "".join(row_text(y, group=group) for y in range(rows))
+            parts.append('<g opacity="0">' + content + animate("opacity", values, times) + '</g>')
     elif animation == "sparkle-wave":
+        span = width + .35 * height
+        half = .12 * span
+        movement = animate("gradientTransform", [f'{-half} 0', f'{span + half} 0'], [0, 1],
+                           transform=True, extra='type="translate" additive="sum"')
+        parts.append(f'<defs><linearGradient id="wave" gradientUnits="userSpaceOnUse" '
+                     f'x1="{-half}" x2="{half}" y1="0" y2="0" gradientTransform="matrix(1 0 -.35 1 0 0)">'
+                     '<stop offset="0" stop-color="white" stop-opacity="1"/>'
+                     '<stop offset=".5" stop-color="white" stop-opacity=".65"/>'
+                     '<stop offset="1" stop-color="white" stop-opacity="1"/>' + movement + '</linearGradient>'
+                     f'<mask id="wave-mask" maskUnits="userSpaceOnUse" x="0" y="0" width="{width}" height="{height}">'
+                     f'<rect width="{width}" height="{height}" fill="url(#wave)"/></mask></defs>'
+                     '<g mask="url(#wave-mask)">' + base() + '</g>')
+    elif animation == "flag-wave":
+        for x0, x1, values in flag_strips(cols, ch, PAD):
+            content = "".join(row_text(y, x0, x1) for y in range(rows))
+            times = [i / (len(values) - 1) for i in range(len(values))]
+            movement = animate("transform", [f'0 {v:.6f}' for v in values], times,
+                               transform=True, extra='type="translate"')
+            parts.append('<g>' + content + movement + '</g>')
+    parts.append('</svg>')
+    return "".join(parts)
 
-        parts.append(
-            content
-        )
 
-        parts.append(
-            sparkle_wave()
-        )
-
-    parts.append(
-        "</svg>"
-    )
-
-    svg = "".join(
-        parts
-    )
-
+def main():
+    config = parse_args()
+    grid = build_grid(config)
+    svg = render_svg(config, grid)
     try:
-
-        os.makedirs(
-            os.path.dirname(
-                config["out"]
-            )
-            or ".",
-            exist_ok=True,
-        )
-
-        with open(
-            config["out"],
-            "w",
-            encoding="utf-8",
-        ) as fh:
+        os.makedirs(os.path.dirname(config["out"]) or ".", exist_ok=True)
+        with open(config["out"], "w", encoding="utf-8") as fh:
             fh.write(svg)
-
     except OSError as exc:
+        fail(f"Could not write output SVG: {exc}")
+    width = config["cols"] * config["cell_w"] + PAD * 2
+    height = config["rows"] * config["cell_h"] + PAD * 2
+    print(f"Created {config['out']} {len(svg)} bytes; {width}x{height}; "
+          f"mode={config['mode']}; animation={config['animation']}; "
+          f"speed={config['speed']}; loop={'yes' if repeats(config['animation'], config['loop']) else 'no'}")
 
-        fail(
-            "Could not write output SVG: "
-            f"{exc}"
-        )
-
-    print(
-        f"Created "
-        f"{config['out']} "
-        f"{len(svg)} bytes; "
-        f"{canvas_w}x{canvas_h}; "
-        f"mode={config['mode']}; "
-        f"animation={animation}; "
-        f"speed={config['speed']}; "
-        f"loop={config['loop']}"
-    )
-
-
-# --------------------------------------------------
-# Entry point
-# --------------------------------------------------
 
 if __name__ == "__main__":
-
     try:
         main()
-
-    except (
-        KeyboardInterrupt,
-        EOFError,
-    ):
-        print(
-            "\nGeneration cancelled."
-        )
-
+    except (KeyboardInterrupt, EOFError):
+        print("\nGeneration cancelled.")
         raise SystemExit(130)
