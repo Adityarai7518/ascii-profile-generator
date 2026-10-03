@@ -61,7 +61,7 @@ The format is selected during the same configuration flow. The program does not 
 
 ## Animations
 
-The existing choices 1–9 retain their numbers. New choices are 10 Typewriter, 11 Dissolve, and 12 Breathing. Flag Wave remains under `Additional`.
+The normal menu has 14 animations. Choices 1–9 retain their numbers; 10 is Typewriter, 11 Dissolve, 12 Digital Rain, 13 Tetris, and 14 Mosaic. Flag Wave remains under `Additional`.
 
 | Animation | Visual behavior | Loop behavior |
 | --- | --- | --- |
@@ -71,12 +71,14 @@ The existing choices 1–9 retain their numbers. New choices are 10 Typewriter, 
 | Iris Aperture | Open an eight-sided aperture | Reveal, hold, close when looping |
 | Circular Reveal | Expand a circular opening | Reveal, hold, close when looping |
 | Fade In | Fade the complete artwork into view | Reveal, hold, close when looping |
-| Twinkle | Gently dim and restore selected existing glyphs | Repeat only when requested |
+| Twinkle | Subtly strengthen selected existing glyph coverage, then restore it | Repeat only when requested |
 | Sparkle Wave | Move a subtle opacity band across existing glyphs | Repeat only when requested |
 | Instant | Display the complete artwork immediately | Never loops; one GIF frame |
 | Typewriter | Build each line from left to right, in reading order | Reveal, hold, close when looping |
 | Dissolve | Assemble deterministic scattered groups of characters | Reveal, hold, dissolve away when looping |
-| Breathing | Gently dim the complete image to 86% and restore it | Repeat only when requested |
+| Digital Rain | Sparse falling ASCII backdrop behind unchanged artwork | Repeat only when requested |
+| Tetris | Falling ASCII pieces assemble the artwork | Repeat only when requested |
+| Mosaic | Geometric tile apertures uncover stationary ASCII artwork | Reveal, hold, close when looping |
 | Flag Wave | Move vertical strips with a fixed hoist edge | Always loops |
 
 All animations support all colour modes. The Flag workflow offers Original and Black & White themes. Twinkle and Sparkle Wave preserve the original characters; they do not add random symbols. Non-looping reveals finish at the complete static image. Ambient effects return to the original intensity; Flag intentionally keeps moving.
@@ -84,6 +86,14 @@ All animations support all colour modes. The Flag workflow offers Original and B
 Slow, Normal, and Fast use 9, 5.5, and 2.8 seconds per cycle. Flag Wave has a minimum 4-second cycle. Instant ignores speed. Looping reveals spend 65% of the cycle revealing, 15% holding the complete image, and 20% closing. GIF delays use whole hundredths of a second; identical frames may be combined without changing the total duration. SVG animation is continuous. PNG and JPEG are static regardless of the animation selection.
 
 SVG and PNG keep a transparent canvas when background is `none`, including for opaque source photos. Choose `Original` to infer a solid colour from an opaque source's border. JPEG and GIF flatten a transparent canvas to white. GIF uses a shared 256-colour palette and a maximum 640-pixel edge; SVG/Pillow font rasterization and GIF palette reduction can differ visually.
+
+Mosaic (option 14) uses at most 512 deterministic rectangular tiles. Each aperture
+expands from its center over one unchanged artwork layer: glyphs never move or
+change colour. SVG and GIF share one geometry/timing plan. Non-looping completion
+is the static artwork; looping completion holds before the apertures close.
+The matte covers canvas padding and preserves translucent glyph coverage. SVG
+without animation support falls back to complete artwork. See the Mosaic section
+in [ANIMATION_CONTRACT.md](ANIMATION_CONTRACT.md) for implementation invariants.
 
 
 ## Sample

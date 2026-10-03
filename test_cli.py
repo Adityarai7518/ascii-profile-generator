@@ -24,6 +24,24 @@ class NavigationTests(unittest.TestCase):
             self.assertIs(cli.choose_color('Foreground'), cli.BACK)
             self.assertIs(cli.choose_number('Gamma', 1), cli.BACK)
 
+    def test_tetris_chooser_prompt_range_and_navigation(self):
+        for answers, default, expected in [(['13'], '1', 'tetris'),
+                                            ([''], '1', 'row-reveal'),
+                                            ([''], '13', 'tetris'),
+                                            (['15', '13'], '1', 'tetris'),
+                                            (['14'], '1', 'mosaic'),
+                                            (['12'], '1', 'digital-rain'),
+                                            ([''], '14', 'mosaic'),
+                                            (['b'], '1', cli.BACK)]:
+            with self.subTest(answers=answers), patch('builtins.input', side_effect=answers) as read:
+                self.assertEqual(cli.choose_animation(default), expected)
+                for call in read.call_args_list:
+                    self.assertIn(f'1-14, Enter = {default}', call.args[0])
+                    self.assertNotIn('1-12', call.args[0])
+        with patch('builtins.input', return_value='q'), self.assertRaises(SystemExit) as error:
+            cli.choose_animation()
+        self.assertEqual(error.exception.code, 0)
+
     def test_back_revisits_previous_value(self):
         first = iter(['old', 'new']); second = iter([cli.BACK, 'done'])
         values = cli.run_stages([('first', lambda: next(first)), ('second', lambda: next(second))], {}, cli.BACK)
@@ -63,6 +81,21 @@ class NavigationTests(unittest.TestCase):
             cli.run_normal('sample.png', dict(mode='light', background='#ffffff', foreground='#111111', palette=[]))
         self.assertEqual(generate.call_args.args[1]['animation'], 'typewriter')
         self.assertEqual(generate.call_args.args[1]['dimensions'], (120, 64))
+
+    def test_ambient_and_tetris_timing_reaches_both_export_commands(self):
+        for animation in ['twinkle', 'digital-rain', 'tetris', 'mosaic']:
+            for speed in ['slow', 'normal', 'fast']:
+                for loop in ['yes', 'no']:
+                    values = dict(animation=animation, speed=speed, loop=loop,
+                                  dimensions=(120, 64), character_size=(8, 15),
+                                  ramp=' .:@', contrast=1., brightness=1., gamma=1.,
+                                  output_format='gif', color=dict(mode='light',
+                                  foreground='#111111', background=None, palette=[]))
+                    svg = cli.renderer_command('sample.png', 'out.svg', values)
+                    gif = cli.exporter_command('sample.png', 'out.gif', values)
+                    self.assertEqual(svg[-3:], [animation, speed, loop])
+                    for flag, value in [('--animation', animation), ('--speed', speed), ('--loop', loop)]:
+                        self.assertEqual(gif[gif.index(flag) + 1], value)
 
     def test_ramp_preserves_whitespace_and_command_characters(self):
         for value in ['  .:@', 'back', 'quit', ' .░▒▓█']:

@@ -32,14 +32,13 @@ from ascii_renderer import (  # noqa: E402
     crop_to_cell_aspect,
     is_hex,
     load_source,
-    get_twinkle_cells,
     infer_original_background,
 )
 
 from animations import (
-    DISSOLVE_GROUPS, BREATHING_VALUES, repeats, reveal_progress,
+    DISSOLVE_GROUPS, opacity_plan, repeats, reveal_progress,
     group_visibility, aperture_points, flag_strips, interpolate,
-    twinkle_factor, dissolve_group, gif_timeline,
+    dissolve_group, gif_timeline, rain_streams, RAIN_COLOUR, tetris_plan, mosaic_plan,
 )
 
 DEFAULT_SIZE = 1000
@@ -439,6 +438,37 @@ def apply_mask(foreground, mask):
     return image
 
 
+def mosaic_mask(size, plan, progress):
+    """One supersampled coverage union; never one full-size mask per tile."""
+    amount = plan.progress(progress)
+    if amount in (0., 1.):
+        return Image.new('L', size, 255 if amount == 1. else 0)
+    width, height = size[0] * 2, size[1] * 2
+    mask = Image.new('L', (width, height))
+    draw = ImageDraw.Draw(mask)
+    sx, sy = width / plan.width, height / plan.height
+    for tile in plan.tiles:
+        x, y, w, h = tile.rectangle(amount)
+        if w <= 0 or h <= 0:
+            continue
+        # Quantize common boundaries identically; Pillow's last pixel is
+        # inclusive whereas the geometric rectangles are half-open.
+        # Remove sub-nanopixel arithmetic noise before half-up ties, so the
+        # reverse envelope selects the same pixels as the opening envelope.
+        left, right = (math.floor(round(value * sx, 9) + .5) for value in (x, x + w))
+        top, bottom = (math.floor(round(value * sy, 9) + .5) for value in (y, y + h))
+        if right > left and bottom > top:
+            draw.rectangle((left, top, right - 1, bottom - 1), fill=255)
+    return mask.resize(size, Image.Resampling.BOX)
+
+
+def apply_mosaic(foreground, config, grid, progress):
+    plan = config.get('_mosaic_plan') or mosaic_plan(config, grid)
+    if plan.progress(progress) == 1.:
+        return foreground
+    return apply_mask(foreground, mosaic_mask(foreground.size, plan, progress))
+
+
 def cell_box(config, size, x, y):
     full_w, full_h = canvas_size(config)
     sx, sy = size[0] / full_w, size[1] / full_h
@@ -467,17 +497,36 @@ def apply_flag_wave(foreground, progress, strips=12, config=None):
     return result
 
 
-def apply_twinkle(foreground, config, progress, grid):
-    cells = config.get("_twinkle_cells")
-    if cells is None:
-        cells = get_twinkle_cells(config["cols"], config["rows"], grid,
-                                  len(config["ramp"]) - 1, ramp=config["ramp"])
-    mask = Image.new("L", foreground.size, 255)
-    for i, cell in enumerate(cells):
-        factor = twinkle_factor(progress, i, len(cells))
-        if factor < 1:
-            mask.paste(round(255 * factor), cell_box(config, foreground.size, cell["x"], cell["y"]))
-    return apply_mask(foreground, mask)
+def opacity_target_map(config, size, plan):
+    """Raster ownership for cell targets; 255 denotes untouched static cells."""
+    groups = Image.new("L", size, 255)
+    for i, target in enumerate(plan.targets):
+        for x, y in target.cells:
+            groups.paste(i, cell_box(config, size, x, y))
+    return groups
+
+
+def apply_opacity_plan(foreground, config, progress, grid):
+    plan = config.get("_opacity_plan")
+    if plan is None:
+        plan = opacity_plan(config, grid)
+    groups = config.get("_opacity_map")
+    if groups is None:
+        groups = opacity_target_map(config, foreground.size, plan)
+    source_alpha = foreground.getchannel("A")
+    alpha = source_alpha.copy()
+    for i, target in enumerate(plan.targets):
+        exponent = target.envelope.at(progress)
+        if exponent == 1:
+            continue
+        # Same alpha-gamma transfer as SVG feFuncA; never redraw a character,
+        # change its RGB, or fill previously transparent pixels.
+        table = [round(255 * (value / 255) ** exponent) for value in range(256)]
+        mask = groups.point([255 if group == i else 0 for group in range(256)])
+        alpha.paste(source_alpha.point(table), (0, 0), mask)
+    result = foreground.copy()
+    result.putalpha(alpha)
+    return result
 
 
 def apply_sparkle_wave(foreground, progress):
@@ -522,16 +571,86 @@ def cell_reveal_mask(config, size, progress, animation):
     return mask
 
 
+def tetris_patches(foreground, config, plan):
+    """Partition the existing raster once, with no redraw or alpha multiplication.
+
+    Use the same cell ownership boundaries as Twinkle. Outer cells include
+    padding so that partitioning also retains the raster's boundary pixels.
+    Only small cropped patches are retained, never a canvas per piece.
+    """
+    patches = []
+    for piece in plan.pieces:
+        boxes = []
+        for x, y in piece.cells:
+            x0, y0, x1, y1 = cell_box(config, foreground.size, x, y)
+            boxes.append((0 if x == 0 else x0, 0 if y == 0 else y0,
+                          foreground.width if x == config['cols'] - 1 else x1,
+                          foreground.height if y == config['rows'] - 1 else y1))
+        left, top = min(b[0] for b in boxes), min(b[1] for b in boxes)
+        right, bottom = max(b[2] for b in boxes), max(b[3] for b in boxes)
+        patch = Image.new('RGBA', (right - left, bottom - top))
+        for box in boxes:
+            patch.paste(foreground.crop(box), (box[0] - left, box[1] - top))
+        if patch.getbbox():
+            patches.append((piece, (left, top), patch))
+    return tuple(patches)
+
+
+def apply_tetris(foreground, config, grid, progress):
+    plan = config.get('_tetris_plan') or tetris_plan(config, grid)
+    # The settled state reuses the authoritative raster exactly, including
+    # antialiasing and downsampling. No recomposition at the final frame.
+    if all(piece.offset(progress) == 0 for piece in plan.pieces):
+        return foreground
+    patches = config.get('_tetris_patches')
+    if patches is None:
+        patches = tetris_patches(foreground, config, plan)
+    result = Image.new('RGBA', foreground.size)
+    sy = foreground.height / canvas_size(config)[1]
+    for piece, (x, y), patch in patches:
+        result.alpha_composite(patch, (x, y + round(piece.offset(progress) * sy)))
+    return result
+
+
+def render_rain_layer(size, config, grid, progress):
+    """Rasterize only the sparse atmospheric glyphs at GIF export resolution."""
+    layer = Image.new("RGBA", size)
+    full_w, full_h = canvas_size(config)
+    sx, sy = size[0] / full_w, size[1] / full_h
+    streams = config.get("_rain_streams")
+    if streams is None:
+        streams = rain_streams(config, grid)
+    font = config.get("_rain_font")
+    if font is None:
+        font = find_font(min(config["cell_h"] * .86, config["cell_w"] / .60) * sy)
+    draw = ImageDraw.Draw(layer)
+    colour = parse_hex(RAIN_COLOUR)
+    for stream in streams:
+        head = stream.position(progress)
+        for j, (char, opacity) in enumerate(zip(stream.glyphs, stream.opacities)):
+            y = (head - j * config["cell_h"]) * sy
+            if -config["cell_h"] * sy <= y <= size[1] + config["cell_h"] * sy:
+                draw.text((stream.x * sx, y), char, font=font, anchor="ls",
+                          fill=(*colour, round(255 * opacity)))
+    return layer
+
+
 def make_gif_frame(foreground, background, progress, animation, config, grid):
-    if animation == "flag-wave":
+    if animation == "digital-rain":
+        backdrop = flatten_background(render_rain_layer(foreground.size, config, grid, progress),
+                                      "#ffffff" if background is None else background).convert("RGBA")
+        # Source-over artwork is always last. Its RGBA data is never modified.
+        return Image.alpha_composite(backdrop, foreground).convert("RGB")
+    if animation == "mosaic":
+        visible = apply_mosaic(foreground, config, grid, progress)
+    elif animation == "tetris":
+        visible = apply_tetris(foreground, config, grid, progress)
+    elif animation == "flag-wave":
         visible = apply_flag_wave(foreground, progress, config=config)
     elif animation == "twinkle":
-        visible = apply_twinkle(foreground, config, progress, grid)
+        visible = apply_opacity_plan(foreground, dict(config, animation=animation), progress, grid)
     elif animation == "sparkle-wave":
         visible = apply_sparkle_wave(foreground, progress)
-    elif animation == "breathing":
-        factor = interpolate(BREATHING_VALUES, progress)
-        visible = apply_mask(foreground, Image.new("L", foreground.size, round(255 * factor)))
     elif animation == "instant":
         visible = foreground
     else:
@@ -603,12 +722,22 @@ def save_gif(foreground, output, background, animation, speed, loop, config, gri
     if isinstance(background, Image.Image):
         background = background.resize(foreground.size, Image.Resampling.LANCZOS)
     config = dict(config, animation=animation, speed=speed, loop=loop)
+    plan = None
+    if animation == "mosaic":
+        config['_mosaic_plan'] = plan = mosaic_plan(config, grid)
+    if animation == "tetris":
+        config['_tetris_plan'] = plan = tetris_plan(config, grid)
+        config['_tetris_patches'] = tetris_patches(foreground, config, plan)
     if animation == "twinkle":
-        config["_twinkle_cells"] = get_twinkle_cells(config["cols"], config["rows"], grid,
-                                                    len(config["ramp"]) - 1, ramp=config["ramp"])
+        config["_opacity_plan"] = plan = opacity_plan(config, grid)
+        config["_opacity_map"] = opacity_target_map(config, foreground.size, plan)
     if animation == "dissolve":
         config["_dissolve_map"] = dissolve_map(config, foreground.size)
-    positions, durations = gif_timeline(animation, speed, loop)
+    if animation == "digital-rain":
+        config["_rain_streams"] = rain_streams(config, grid)
+        scale = foreground.height / canvas_size(config)[1]
+        config["_rain_font"] = find_font(min(config["cell_h"] * .86, config["cell_w"] / .60) * scale)
+    positions, durations = gif_timeline(animation, speed, loop, plan)
 
     # One shared palette avoids unrelated colour changes between frames. Train
     # on the static image plus representative phases, including the background.
@@ -635,7 +764,7 @@ def save_gif(foreground, output, background, animation, speed, loop, config, gri
     # disposal=1 retains those pixels; source transparency was flattened above.
     options = dict(save_all=True, append_images=frames[1:], duration=durations,
                    disposal=1, optimize=True, palette=palette.getpalette())
-    if repeats(animation, loop):
+    if plan.repeat if plan is not None else repeats(animation, loop):
         options["loop"] = 0
     frames[0].save(output, "GIF", **options)
     return frames[0].size

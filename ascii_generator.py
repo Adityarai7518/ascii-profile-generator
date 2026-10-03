@@ -110,7 +110,9 @@ ANIMATIONS = {
     "9": ("Instant", "instant"),
     "10": ("Typewriter", "typewriter"),
     "11": ("Dissolve", "dissolve"),
-    "12": ("Breathing", "breathing"),
+    "12": ("Digital Rain", "digital-rain"),
+    "13": ("Tetris", "tetris"),
+    "14": ("Mosaic", "mosaic"),
 }
 
 
@@ -485,7 +487,9 @@ def choose_animation(default_choice="1"):
             "9": "Instant          - no animation",
             "10": "Typewriter       - build in reading order",
             "11": "Dissolve         - ordered scattered assembly",
-            "12": "Breathing        - subtle intensity cycle",
+            "12": "Digital Rain     - sparse falling ASCII backdrop",
+            "13": "Tetris           - falling ASCII pieces assemble the artwork",
+            "14": "Mosaic           - geometric tile matte reveal",
         }
 
         for key in ANIMATIONS:
@@ -495,7 +499,7 @@ def choose_animation(default_choice="1"):
         print("q. Quit")
 
         choice = command_input(
-            f"\nChoose an option (1-12, Enter = {default_choice}): "
+            f"\nChoose an option (1-14, Enter = {default_choice}): "
         )
 
         if choice is BACK:

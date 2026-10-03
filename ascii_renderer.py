@@ -9,7 +9,6 @@ from PIL import (
 import html
 import math
 import os
-import random
 import sys
 
 
@@ -22,9 +21,10 @@ VALID_MODES = {
 }
 
 from animations import (
-    VALID_ANIMATIONS, SPEED_SETTINGS, DISSOLVE_GROUPS, BREATHING_VALUES,
+    VALID_ANIMATIONS, SPEED_SETTINGS, DISSOLVE_GROUPS, opacity_plan,
     repeats, duration, reveal_progress, reveal_times, group_visibility,
-    twinkle_window, twinkle_factor, dissolve_group, aperture_points, flag_strips,
+    dissolve_group, aperture_points, flag_strips, rain_streams, RAIN_COLOUR, tetris_plan,
+    mosaic_plan,
 )
 
 
@@ -1350,47 +1350,46 @@ def esc(text):
     return html.escape(text)
 
 
+def _svg_twinkle_opacity(alpha, envelope):
+    """Serialize a**e(t), including the curve between exponent keyframes.
+
+    Linear opacity interpolation would change the shared gamma waveform.
+    Cubic Hermite segments with linear Bezier time approximate the exponential
+    with alpha error below 1e-7, before static six-decimal endpoint rounding.
+    The Hermite remainder is bounded by max(alpha) * log_ratio**4 / 384.
+    This is SVG serialization only; the shared envelope is never changed.
+    """
+    times = [envelope.times[0]]
+    values = [f'{alpha:.6f}']
+    splines = []
+    for t0, t1, e0, e1 in zip(envelope.times, envelope.times[1:],
+                             envelope.values, envelope.values[1:]):
+        k = math.log(alpha) * (e1 - e0)
+        maximum = max(alpha ** e0, alpha ** e1)
+        count = max(1, math.ceil(abs(k) / 2),
+                    math.ceil((maximum * k ** 4 / (384 * 1e-7)) ** .25))
+        for step in range(count):
+            left = e0 + (e1 - e0) * step / count
+            right = e1 if step + 1 == count else e0 + (e1 - e0) * (step + 1) / count
+            a, b = alpha ** left, alpha ** right
+            if a == b:
+                y1, y2 = 1 / 3, 2 / 3
+            else:
+                y1 = (k / count) * a / (3 * (b - a))
+                y2 = 1 - (k / count) * b / (3 * (b - a))
+            splines.append(f'0.333333333333 {y1:.12f} 0.666666666667 {y2:.12f}')
+            times.append(t1 if step + 1 == count else t0 + (t1 - t0) * (step + 1) / count)
+            values.append(f'{alpha:.6f}' if right == 1 else f'{b:.9f}')
+    return values, times, ';'.join(splines)
+
+
 def get_twinkle_cells(cols, rows, grid, ramp_last, rng_seed=20260926, ramp=None):
-    cells = [
-        (x, y)
-        for y in range(rows)
-        for x in range(cols)
-        if grid[y][x]["alpha"] > 0.0
-        and (not ramp[grid[y][x]["index"]].isspace() if ramp is not None else grid[y][x]["index"] > 0)
-    ]
-
-    if not cells:
-        return []
-
-    limit = min(
-        80,
-        max(
-            30,
-            cols * rows // 110,
-        ),
-    )
-
-    if len(cells) > limit:
-        step = (len(cells) - 1) / max(1, limit - 1)
-        cells = [
-            cells[int(round(i * step))]
-            for i in range(limit)
-        ]
-
-    rng = random.Random(rng_seed)
-    rng.shuffle(cells)
-
-    results = []
-    for x, y in cells:
-        item = grid[y][x]
-        glyph_index = item["index"]
-        results.append({
-            "x": x,
-            "y": y,
-            "glyph_index": glyph_index,
-        })
-
-    return results
+    """Compatibility helper: return the actual glyphs targeted by the plan."""
+    config = dict(animation="twinkle", speed="normal", loop="no",
+                  ramp=ramp if ramp is not None else " " + "@" * ramp_last)
+    plan = opacity_plan(config, grid, rng_seed)
+    return [dict(x=x, y=y, glyph_index=grid[y][x]["index"])
+            for target in plan.targets for x, y in target.cells]
 
 
 def render_svg(config, grid):
@@ -1413,10 +1412,33 @@ def render_svg(config, grid):
                 f'keyTimes="{";".join(f"{t:.9f}" for t in times)}" '
                 f'dur="{seconds:.3f}s" {repeat_attr} {extra}/>')
 
-    twinkles = {}
-    if animation == "twinkle":
-        cells = get_twinkle_cells(cols, rows, grid, len(ramp) - 1, ramp=ramp)
-        twinkles = {(cell["x"], cell["y"]): (i, len(cells)) for i, cell in enumerate(cells)}
+    plan = opacity_plan(config, grid) if animation == "twinkle" else None
+    if plan is not None:
+        seconds = plan.seconds
+        repeat_attr = 'repeatCount="indefinite"' if plan.repeat else 'fill="freeze"'
+    glyph_animations = {}
+    if plan is not None:
+        for target in plan.targets:
+            for x, y in target.cells:
+                alpha = grid[y][x]["alpha"]
+                # Envelopes contain gamma exponents, not opacity values.
+                # Use the static serializer's exact alpha at identity, including
+                # its precision, so frozen SMIL and unanimated ink agree.
+                values, times, splines = _svg_twinkle_opacity(alpha, target.envelope)
+                glyph_animations[x, y] = animate(
+                    'opacity', values, times, extra=f'calcMode="spline" keySplines="{splines}"')
+    elif animation == "tetris":
+        assembly = tetris_plan(config, grid)
+        seconds = assembly.seconds
+        repeat_attr = 'repeatCount="indefinite"' if assembly.repeat else 'fill="freeze"'
+        for piece in assembly.pieces:
+            for x, y in piece.cells:
+                # tspan transforms are ignored by Chromium and WebKit. Absolute
+                # y animates one glyph without accumulating the preceding
+                # glyph's offset, while retaining its original text row.
+                baseline = float(f'{PAD + y * ch + ch * .78:.3f}')
+                glyph_animations[x, y] = animate(
+                    'y', [f'{baseline + dy:.6f}' for dy in piece.offsets], piece.times)
 
     dissolve_rows = None
     if animation == "dissolve":
@@ -1433,15 +1455,10 @@ def render_svg(config, grid):
             char = ramp[item["index"]]
             if item["alpha"] <= 0 or char.isspace():
                 continue
-            effect = ""
-            if (x, y) in twinkles:
-                i, count = twinkles[x, y]
-                times = sorted({0.0, *twinkle_window(i, count), 1.0})
-                values = [f'{item["alpha"] * twinkle_factor(t, i, count):.6f}' for t in times]
-                effect = animate("opacity", values, times)
             # Explicit positions avoid cumulative font/fallback advance errors.
             spans.append(f'<tspan x="{PAD + x * cw:.3f}" fill="{item["color"]}" '
-                         f'opacity="{item["alpha"]:.6f}">{esc(char)}{effect}</tspan>')
+                         f'opacity="{item["alpha"]:.6f}">{esc(char)}'
+                         + glyph_animations.get((x, y), '') + '</tspan>')
         if not spans:
             return ""
         return (f'<text y="{PAD + y * ch + ch * .78:.3f}" xml:space="preserve">'
@@ -1461,13 +1478,54 @@ def render_svg(config, grid):
     times = reveal_times(repeat=repeat)
     progress = [reveal_progress(t, repeat) for t in times]
 
-    if animation in {"instant", "twinkle"}:
+    if animation == "instant":
+        parts.append(base())
+    elif animation == "mosaic":
+        mosaic = mosaic_plan(config, grid)
+        seconds = mosaic.seconds
+        repeat_attr = 'repeatCount="indefinite"' if mosaic.repeat else 'fill="freeze"'
+        parts.append('<defs><clipPath id="mosaic-clip" clipPathUnits="userSpaceOnUse">')
+        for tile in mosaic.tiles:
+            times, rectangles = tile.keyframes(mosaic.repeat)
+            attributes = ('x', 'y', 'width', 'height')
+            # Unanimated fallback is complete; active SMIL supplies the empty
+            # starting aperture. Artwork itself is serialized only below.
+            full = tile.rectangle(1.)
+            parts.append('<rect ' + ' '.join(f'{name}="{value:.6f}"'
+                         for name, value in zip(attributes, full)) + '>')
+            for i, name in enumerate(attributes):
+                parts.append(animate(name, [f'{rect[i]:.6f}' for rect in rectangles], times))
+            parts.append('</rect>')
+        times, widths = mosaic.completion_keyframes()
+        parts.append(f'<rect width="{width}" height="{height}">')
+        parts.append(animate('width', widths, times, extra='calcMode="discrete"'))
+        parts.append('</rect></clipPath></defs><g id="artwork" clip-path="none">')
+        # Even an all-open clip can change browser text alpha rounding. Remove
+        # clipping during completion so the static glyphs rasterize identically.
+        parts.append(animate('clip-path', ['none' if w else 'url(#mosaic-clip)' for w in widths],
+                             times, extra='calcMode="discrete"'))
+        parts.append(base())
+        parts.append('</g>')
+    elif animation == "tetris":
+        parts.append(base())
+    elif animation == "digital-rain":
+        parts.append(f'<defs><clipPath id="rain-bounds"><rect width="{width}" '
+                     f'height="{height}"/></clipPath></defs>'
+                     '<g id="digital-rain" clip-path="url(#rain-bounds)" '
+                     f'fill="{RAIN_COLOUR}">')
+        for stream in rain_streams(config, grid):
+            times, positions = stream.keyframes()
+            trail = ''.join(f'<text x="{stream.x:.6f}" y="{-j * ch:.6f}" '
+                            f'opacity="{opacity:.6f}">{esc(char)}</text>'
+                            for j, (char, opacity) in enumerate(zip(stream.glyphs, stream.opacities)))
+            movement = animate('transform', [f'0 {y:.6f}' for y in positions], times,
+                               transform=True, extra='type="translate"')
+            parts.append('<g>' + trail + movement + '</g>')
+        parts.append('</g><g id="artwork">' + base() + '</g>')
+    elif animation == "twinkle":
         parts.append(base())
     elif animation == "fade":
         parts.append('<g opacity="0">' + base() + animate("opacity", progress, times) + '</g>')
-    elif animation == "breathing":
-        times = [i / (len(BREATHING_VALUES) - 1) for i in range(len(BREATHING_VALUES))]
-        parts.append('<g>' + base() + animate("opacity", BREATHING_VALUES, times) + '</g>')
     elif animation in {"row-reveal", "column-reveal", "diagonal-reveal", "aperture-reveal", "circular-reveal"}:
         if animation == "row-reveal":
             shape = (f'<rect width="{width}" height="0">' +

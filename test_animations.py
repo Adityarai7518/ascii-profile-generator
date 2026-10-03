@@ -1,6 +1,7 @@
 """Cross-export animation invariants, not snapshots of implementation text."""
 
 import contextlib
+import copy
 import io
 import math
 from pathlib import Path
@@ -9,7 +10,7 @@ import unittest
 from unittest.mock import patch
 import xml.etree.ElementTree as ET
 
-from PIL import Image, ImageChops
+from PIL import Image, ImageChops, ImageStat
 
 import animations as timeline
 import ascii_renderer as renderer
@@ -81,7 +82,7 @@ class AnimationTests(unittest.TestCase):
         self.assert_same(start, end)
 
     def test_ambient_effects_return_to_static_without_erasing_ink(self):
-        for name in ["twinkle", "sparkle-wave", "breathing"]:
+        for name in ["twinkle", "sparkle-wave"]:
             with self.subTest(animation=name):
                 self.assert_same(self.frame(name, 0), self.static)
                 self.assert_same(self.frame(name, 1), self.static)
@@ -109,7 +110,7 @@ class AnimationTests(unittest.TestCase):
                     self.assertLessEqual(max(durations) - min(durations), 10)
 
     def test_actual_gif_loop_metadata_and_instant(self):
-        for animation in ["instant", "fade", "flag-wave", "typewriter", "dissolve", "breathing"]:
+        for animation in ["instant", "fade", "flag-wave", "typewriter", "dissolve"]:
             for loop in ["no", "yes"]:
                 path = self.path / f"{animation}-{loop}.gif"
                 exporter.save_gif(self.fg, str(path), None, animation, "fast", loop, self.c, self.grid)
@@ -200,16 +201,18 @@ class AnimationTests(unittest.TestCase):
 
     def test_new_animations_are_deterministic_and_distinct(self):
         frames = []
-        for animation in ["typewriter", "dissolve", "breathing"]:
+        for animation in ["typewriter", "dissolve"]:
             a = self.frame(animation, .37)
             self.assert_same(a, self.frame(animation, .37))
             frames.append(a.tobytes())
-        self.assertEqual(len(set(frames)), 3)
+        self.assertEqual(len(set(frames)), 2)
 
     def test_new_cli_choices_keep_existing_numbers(self):
         self.assertEqual(cli.ANIMATIONS["7"][1], "twinkle")
         self.assertEqual(cli.ANIMATIONS["9"][1], "instant")
-        for key, animation in [("10", "typewriter"), ("11", "dissolve"), ("12", "breathing")]:
+        self.assertEqual(timeline.VALID_ANIMATIONS, timeline.REVEALS | {"instant", "twinkle", "sparkle-wave", "flag-wave", "digital-rain", "tetris"})
+        self.assertEqual(set(cli.ANIMATIONS), {str(i) for i in range(1, 15)})
+        for key, animation in [("10", "typewriter"), ("11", "dissolve"), ("12", "digital-rain"), ("13", "tetris"), ("14", "mosaic")]:
             with patch.object(cli, "command_input", return_value=key), contextlib.redirect_stdout(io.StringIO()):
                 self.assertEqual(cli.choose_animation(), animation)
 
@@ -230,6 +233,471 @@ class AnimationTests(unittest.TestCase):
         self.assertAlmostEqual(find.call_args.args[0], 4.3)
         root = ET.fromstring(renderer.render_svg(c, self.grid))
         self.assertAlmostEqual(float(root.get("font-size")), 4.3)
+
+
+class SvgRowSerializationTests(unittest.TestCase):
+    def test_removing_only_animations_restores_exact_static_tree(self):
+        # Sparse rows, whitespace, escaped characters, alpha extremes and
+        # fractional metrics must retain the golden static serialization.
+        for name in ['twinkle', 'tetris']:
+            for loop in ['no', 'yes']:
+                c = dict(cols=9, rows=7, cell_w=7.12345, cell_h=11.23456,
+                         ramp=' <&jW', animation=name, speed='fast', loop=loop,
+                         background=None)
+                grid = [[dict(index=(x+y) % 5, color='#69a4d1',
+                              alpha=0. if y == 3 else [0., .123456789, .65, 1.][x % 4])
+                         for x in range(c['cols'])] for y in range(c['rows'])]
+                static = ET.fromstring(renderer.render_svg(dict(c, animation='instant'), grid))
+                animated = ET.fromstring(renderer.render_svg(c, grid))
+                self.assertEqual(len(animated.findall('.//{*}text')), len(static.findall('{*}text')))
+                self.assertEqual(len(animated.findall('.//{*}tspan')), len(static.findall('.//{*}tspan')))
+                for span in animated.findall('.//{*}tspan'):
+                    for child in list(span):
+                        self.assertEqual(child.tag.split('}')[-1], 'animate')
+                        span.remove(child)
+                self.assertEqual(ET.tostring(animated), ET.tostring(static))
+
+    def test_empty_grid_does_not_create_animation_rows_or_artwork_copies(self):
+        for name in ['twinkle', 'tetris']:
+            c = dict(cols=3, rows=2, cell_w=8, cell_h=15, ramp=' @',
+                     animation=name, speed='normal', loop='no', background=None)
+            grid = [[dict(index=1, color='#ffffff', alpha=0.) for _ in range(3)] for _ in range(2)]
+            root = ET.fromstring(renderer.render_svg(c, grid))
+            self.assertEqual(list(root), [])
+
+
+class TwinkleContractTests(unittest.TestCase):
+    """Focused direction/identity checks; no colour × speed × loop matrix."""
+
+    setUp = AnimationTests.setUp
+    assert_same = AnimationTests.assert_same
+
+    def plan(self, **changes):
+        return timeline.opacity_plan(dict(self.c, animation="twinkle", **changes), self.grid)
+
+    def test_svg_keeps_same_glyphs_and_only_animates_alpha_transfer(self):
+        c = dict(self.c, animation="twinkle")
+        frozen = copy.deepcopy(self.grid)
+        static = ET.fromstring(renderer.render_svg(dict(c, animation="instant"), self.grid))
+        root = ET.fromstring(renderer.render_svg(c, self.grid))
+        def glyphs(svg):
+            return sorted((t.get('y'), s.get('x'), s.text, s.get('fill'), s.get('opacity'))
+                          for t in svg.findall('.//{*}text') for s in t.findall('{*}tspan'))
+        self.assertEqual(glyphs(root), glyphs(static))
+        self.assertEqual(len(root.findall('.//{*}text')), len(static.findall('.//{*}text')))
+        self.assertEqual(len(root.findall('{*}text')), len(root.findall('.//{*}text')))
+        self.assertFalse(root.findall('.//{*}filter'))
+        ownership = {cell: target.envelope for target in self.plan().targets for cell in target.cells}
+        seen = set()
+        for text in root.findall('{*}text'):
+            y = round((float(text.get('y')) - 20 - c['cell_h'] * .78) / c['cell_h'])
+            for span in text:
+                x = round((float(span.get('x')) - 20) / c['cell_w'])
+                nodes = span.findall('{*}animate')
+                if (x, y) not in ownership:
+                    self.assertFalse(nodes)
+                    continue
+                seen.add((x, y))
+                self.assertEqual(len(nodes), 1)
+                anim = nodes[0]
+                self.assertEqual(anim.get('attributeName'), 'opacity')
+                envelope = ownership[x, y]
+                alpha = self.grid[y][x]['alpha']
+                values = list(map(float, anim.get('values').split(';')))
+                times = list(map(float, anim.get('keyTimes').split(';')))
+                for expected in envelope.times:
+                    self.assertTrue(any(abs(actual - expected) < 1e-8 for actual in times))
+                self.assertEqual((values[0], values[-1]), (float(span.get('opacity')),)*2)
+                for value, t in zip(values, times):
+                    self.assertAlmostEqual(value, alpha ** envelope.at(t), places=6)
+                self.assertGreaterEqual(max(values), alpha)
+        self.assertEqual(seen, set(ownership))
+        self.assertEqual(len(root.findall('.//{*}animate')), len(ownership))
+        for tag in ['set', 'script', 'use', 'image']:
+            self.assertFalse(root.findall('.//{*}' + tag))
+        self.assertEqual(self.grid, frozen)
+
+    def test_svg_interpolates_gamma_not_linear_opacity_between_plan_keyframes(self):
+        envelope = self.plan().targets[0].envelope
+        for alpha in [1e-8, .01, .1, .35, .65, .85, .999999, 1.]:
+            values, times, curves = renderer._svg_twinkle_opacity(alpha, envelope)
+            values = list(map(float, values))
+            curves = [tuple(map(float, segment.split())) for segment in curves.split(';')]
+            self.assertEqual(len(curves), len(times)-1)
+            self.assertEqual((values[0], values[-1]), (float(f'{alpha:.6f}'),)*2)
+            for i, (x1, y1, x2, y2) in enumerate(curves):
+                self.assertTrue(0 <= x1 <= x2 <= 1)
+                self.assertTrue(0 <= y1 <= y2 <= 1)
+                for t in [.1, .25, .5, .75, .9]:
+                    fraction = 3*(1-t)**2*t*y1 + 3*(1-t)*t*t*y2 + t**3
+                    actual = values[i] + (values[i+1]-values[i])*fraction
+                    expected = alpha ** envelope.at(times[i]+(times[i+1]-times[i])*t)
+                    self.assertLessEqual(abs(actual-expected), 6e-7)
+
+    def test_peak_strengthens_same_ink_without_redrawing_or_changing_support(self):
+        c = dict(self.c, animation='twinkle')
+        frozen = copy.deepcopy(self.grid)
+        original = self.fg.tobytes()
+        alpha = self.fg.getchannel('A')
+        support = alpha.point([0] + [255] * 255)
+        with patch.object(renderer, 'build_grid', side_effect=AssertionError('Grid regenerated')), \
+             patch.object(exporter, 'render_foreground', side_effect=AssertionError('Glyphs rerendered')), \
+             patch.object(exporter.ImageDraw.ImageDraw, 'text', side_effect=AssertionError('Glyph redrawn')):
+            for progress in [0, .15, .5, .85, 1]:
+                result = exporter.apply_opacity_plan(self.fg, c, progress, self.grid)
+                self.assert_same(result.convert('RGB'), self.fg.convert('RGB'))
+                self.assert_same(result.getchannel('A').point([0] + [255] * 255), support)
+                self.assertIsNone(ImageChops.subtract(alpha, result.getchannel('A')).getbbox(), 'Ink dimmed')
+                if progress in [0, 1]:
+                    self.assertEqual(result.tobytes(), original)
+                else:
+                    change = ImageChops.difference(alpha, result.getchannel('A'))
+                    changed = sum(change.histogram()[1:])
+                    self.assertGreater(changed, 0, 'Pulse is static')
+                    self.assertLess(changed, .5 * sum(alpha.histogram()[1:]), 'Pulse is not localized')
+        self.assertEqual(self.grid, frozen)
+        self.assertEqual(self.fg.tobytes(), original)
+
+    def test_pulse_increases_contrast_for_light_and_dark_ink(self):
+        c = dict(self.c, animation='twinkle')
+        for ink, background in [('white', 'black'), ('black', 'white')]:
+            fg = Image.new('RGBA', self.fg.size, ink)
+            fg.putalpha(self.fg.getchannel('A'))
+            visible = exporter.apply_opacity_plan(fg, c, .5, self.grid)
+            bg = Image.new('RGB', fg.size, background)
+            before = exporter.flatten_background(fg, background).convert('RGB')
+            after = exporter.flatten_background(visible, background).convert('RGB')
+            normal = ImageChops.difference(before, bg)
+            peak = ImageChops.difference(after, bg)
+            self.assertIsNone(ImageChops.subtract(normal, peak).getbbox(), 'Pulse weakened visual contrast')
+            self.assertGreater(sum(ImageStat.Stat(peak).sum), sum(ImageStat.Stat(normal).sum))
+
+    def test_plan_preserves_ownership_determinism_and_empty_input(self):
+        c = dict(self.c, animation='twinkle', ramp='.@')
+        grid = [[dict(index=0, alpha=1., color='#123456') for _ in range(20)] for _ in range(10)]
+        plan = timeline.opacity_plan(c, grid)
+        self.assertEqual(plan, timeline.opacity_plan(c, grid))
+        cells = {cell for t in plan.targets for cell in t.cells}
+        self.assertTrue(cells)
+        self.assertEqual(len(cells), sum(len(t.cells) for t in plan.targets))
+        # The established 2x2 ownership function is still authoritative.
+        expected = {(x,y) for y in range(10) for x in range(20) if timeline.twinkle_group(x,y)<12}
+        self.assertEqual(cells, expected)
+        for row in grid:
+            for cell in row:
+                cell['alpha'] = 0
+        self.assertEqual(timeline.opacity_plan(c, grid).targets, ())
+
+    def test_twinkle_timing_and_svg_loop_semantics(self):
+        for speed, loop, seconds in [('slow','yes',9.), ('normal','no',5.5), ('fast','yes',2.8)]:
+            c = dict(self.c, animation='twinkle', speed=speed, loop=loop)
+            plan = timeline.opacity_plan(c, self.grid)
+            self.assertEqual(plan.seconds, seconds)
+            self.assertEqual(plan.repeat, loop=='yes')
+            positions, delays = timeline.gif_timeline('twinkle', speed, loop, plan)
+            self.assertEqual(sum(delays), seconds*1000)
+            self.assertEqual(positions[0], 0)
+            if loop=='no': self.assertEqual(positions[-1], 1)
+            else: self.assertLess(positions[-1], 1)
+            root = ET.fromstring(renderer.render_svg(c, self.grid))
+            for node in root.findall('.//{*}animate'):
+                self.assertEqual(float(node.get('dur')[:-1]), seconds)
+                self.assertEqual(node.get('repeatCount'), 'indefinite' if loop=='yes' else None)
+                if loop=='no': self.assertEqual(node.get('fill'), 'freeze')
+
+    def test_v2_peak_is_strong_and_untargeted_pixels_are_identical(self):
+        c = dict(self.c, animation='twinkle')
+        plan = self.plan()
+        target = plan.targets[0]
+        peak = target.envelope.times[target.envelope.values.index(min(target.envelope.values))]
+        groups = exporter.opacity_target_map(c, self.fg.size, plan)
+        # Controlled half-opaque ink isolates transfer strength from the source.
+        fg = self.fg.copy()
+        fg.putalpha(fg.getchannel('A').point([0]+[96]*255))
+        result = exporter.apply_opacity_plan(fg, c, peak, self.grid)
+        self.assertEqual(result.convert('RGB').tobytes(), fg.convert('RGB').tobytes())
+        for before, after, owner in zip(fg.getchannel('A').getdata(), result.getchannel('A').getdata(), groups.getdata()):
+            if owner == 255:
+                self.assertEqual(after, before)
+            if owner == 0 and before:
+                self.assertGreaterEqual(after, 210, 'Peak should strongly strengthen selected ink')
+
+    def test_decoded_twinkle_gif_brightens_and_returns_to_static(self):
+        # Two representative exports only; preserve the existing palette policy.
+        c = dict(self.c, mode='light', foreground='#111111', background='#ffffff',
+                 animation='twinkle', speed='normal')
+        grid = renderer.build_grid(c)
+        fg = exporter.render_foreground(c, grid)
+        static = exporter.flatten_background(fg, c['background']).convert('RGB')
+        for loop in ['yes', 'no']:
+            path = self.path / ('twinkle-'+loop+'.gif')
+            exporter.save_gif(fg, str(path), c['background'], 'twinkle', 'normal', loop, c, grid)
+            with Image.open(path) as gif:
+                palette = gif.copy()
+                self.assertEqual(gif.info.get('loop'), 0 if loop=='yes' else None)
+                frames, delays = [], []
+                for i in range(gif.n_frames):
+                    gif.seek(i); frames.append(gif.convert('RGB')); delays.append(gif.info['duration'])
+            expected = static.quantize(palette=palette, dither=Image.Dither.NONE).convert('RGB')
+            self.assert_same(frames[0], expected)
+            if loop=='no': self.assert_same(frames[-1], expected)
+            self.assertEqual(sum(delays), 5500)
+            self.assertGreater(len({f.tobytes() for f in frames}), 10)
+            bg = Image.new('RGB', static.size, frames[0].getpixel((0,0)))
+            strengths = [sum(ImageStat.Stat(ImageChops.difference(f,bg)).sum) for f in frames]
+            self.assertGreater(max(strengths), strengths[0]*1.02, 'Decoded pulse does not intensify ink')
+            self.assertGreaterEqual(min(strengths), strengths[0]*.995, 'Decoded pulse dims ink')
+            peak = frames[strengths.index(max(strengths))]
+            change = ImageChops.difference(peak, frames[0]).convert('L')
+            ink = ImageChops.difference(frames[0],bg).convert('L')
+            self.assertGreater(sum(change.histogram()[9:]), .04*sum(ink.histogram()[9:]))
+            self.assertLess(sum(change.histogram()[1:]), .5*sum(ink.histogram()[1:]))
+
+
+
+class DigitalRainTests(unittest.TestCase):
+    setUp = AnimationTests.setUp
+    assert_same = AnimationTests.assert_same
+
+    def test_layout_is_deterministic_sparse_and_ascii(self):
+        c = dict(self.c, animation='digital-rain')
+        streams = timeline.rain_streams(c, self.grid)
+        self.assertEqual(streams, timeline.rain_streams(dict(c, speed='fast', loop='yes', out='other.svg'), self.grid))
+        self.assertEqual(len({s.x for s in streams}), len(streams))
+        self.assertLessEqual(len(streams), max(1,c['cols']//8))
+        large = timeline.rain_streams(dict(c, cols=240), self.grid)
+        self.assertGreater(len(large), len(streams))
+        self.assertLessEqual(len(large),24)
+        self.assertEqual({s.speed for s in large}, {1, 2})
+        self.assertEqual(len(timeline.rain_streams(dict(c, cols=3000), self.grid)),24)
+        self.assertGreater(len({s.phase for s in large}),1)
+        self.assertGreater(len({s.travel for s in large}),1)
+        self.assertGreater(len({len(s.glyphs) for s in large}),1)
+        for stream in streams:
+            self.assertTrue(20 <= stream.x <= 20+(c['cols']-1)*c['cell_w'])
+            self.assertTrue(12 <= len(stream.glyphs) <= 25)
+            self.assertEqual(tuple(sorted(stream.opacities, reverse=True)),stream.opacities)
+            self.assertEqual(stream.opacities[0],1.)
+            self.assertEqual(stream.opacities[1],.8)
+            self.assertLess(stream.opacities[-1],.05)
+            self.assertTrue(all(char in c['ramp'] and 33<=ord(char)<=126 for char in stream.glyphs))
+        fallback = timeline.rain_streams(dict(c,ramp=' ░█'),self.grid)
+        self.assertTrue(all(33<=ord(ch)<=126 for stream in fallback for ch in stream.glyphs))
+
+    def test_shared_motion_is_downward_and_recycles_offscreen(self):
+        c = dict(self.c, animation='digital-rain')
+        height = exporter.canvas_size(c)[1]
+        for stream in timeline.rain_streams(c,self.grid):
+            times, positions = stream.keyframes()
+            self.assertEqual(times,tuple(sorted(set(times))))
+            self.assertGreater(positions[1],height+(len(stream.glyphs)-1)*c['cell_h'])
+            self.assertLess(positions[2],0)
+            self.assertAlmostEqual(positions[0],positions[-1])
+            p = (times[1])/2
+            self.assertGreater(stream.position(p+.001),stream.position(p))
+            self.assertAlmostEqual(stream.position(p),positions[0]+p*stream.travel*stream.speed)
+            for reset in range(2,len(times)-1,2):
+                self.assertGreater(positions[reset-1],height+(len(stream.glyphs)-1)*c['cell_h'])
+                self.assertLess(positions[reset],0)
+            # Every visible linear segment is consumed equivalently by SVG
+            # keyframes and GIF position sampling, including the faster streams.
+            for i in range(0,len(times)-1,2):
+                mid=(times[i]+times[i+1])/2
+                self.assertAlmostEqual(stream.position(mid),(positions[i]+positions[i+1])/2)
+        # A controlled stream proves actual raster movement, not just metadata.
+        stream = timeline.RainStream(40,.25,200,30,('A',':','.'),(.42,.25,.15))
+        c['_rain_streams']=(stream,)
+        a = exporter.render_rain_layer(self.fg.size,c,self.grid,0)
+        b = exporter.render_rain_layer(self.fg.size,c,self.grid,.1)
+        self.assertEqual(a.getbbox()[0],b.getbbox()[0])
+        self.assertGreater(b.getbbox()[1],a.getbbox()[1])
+        self.assertIsNotNone(ImageChops.difference(a,b).getbbox())
+
+    def test_svg_backdrop_is_bounded_and_artwork_is_unchanged(self):
+        c = dict(self.c, animation='digital-rain',loop='yes')
+        frozen = copy.deepcopy(self.grid)
+        root=ET.fromstring(renderer.render_svg(c,self.grid))
+        static=ET.fromstring(renderer.render_svg(dict(c,animation='instant'),self.grid))
+        rain=root.find("{*}g[@id='digital-rain']")
+        artwork=root.find("{*}g[@id='artwork']")
+        self.assertLess(list(root).index(rain),list(root).index(artwork))
+        self.assertEqual([ET.tostring(n) for n in artwork], [ET.tostring(n) for n in static if n.tag.endswith('text')])
+        self.assertFalse(artwork.findall('.//{*}animateTransform'))
+        streams=timeline.rain_streams(c,self.grid)
+        self.assertEqual(len(rain.findall('{*}g')),len(streams))
+        self.assertEqual(len(rain.findall('.//{*}animateTransform')),len(streams))
+        self.assertLessEqual(len(rain.findall('.//{*}text')),24*25)
+        clip=root.find(".//{*}clipPath[@id='rain-bounds']/{*}rect")
+        self.assertEqual((float(clip.get('width')),float(clip.get('height'))),exporter.canvas_size(c))
+        self.assertEqual(self.grid,frozen)
+
+    def test_gif_composites_artwork_last_without_mutating_it(self):
+        c=dict(self.c,animation='digital-rain')
+        frozen=copy.deepcopy(self.grid); pixels=self.fg.tobytes()
+        for progress in [0,.3,1]:
+            rain=exporter.render_rain_layer(self.fg.size,c,self.grid,progress)
+            expected=Image.alpha_composite(exporter.flatten_background(rain,'white').convert('RGBA'),self.fg).convert('RGB')
+            actual=exporter.make_gif_frame(self.fg,None,progress,'digital-rain',c,self.grid)
+            self.assert_same(expected,actual)
+            self.assertEqual(actual.size,self.fg.size)
+        self.assertEqual(self.grid,frozen); self.assertEqual(self.fg.tobytes(),pixels)
+        # A fully opaque foreground must occlude every rain pixel.
+        opaque=Image.new('RGBA',self.fg.size,(40,80,120,255))
+        for progress in [0,.3]:
+            self.assert_same(exporter.make_gif_frame(opaque,None,progress,'digital-rain',c,self.grid),opaque.convert('RGB'))
+
+    def test_speed_and_loop_contract(self):
+        for speed,loop,seconds in [('slow','yes',9),('normal','no',5.5),('fast','yes',2.8)]:
+            c=dict(self.c,animation='digital-rain',speed=speed,loop=loop)
+            root=ET.fromstring(renderer.render_svg(c,self.grid))
+            for node in root.findall('.//{*}animateTransform'):
+                self.assertEqual(float(node.get('dur')[:-1]),seconds)
+                self.assertEqual(node.get('repeatCount'),'indefinite' if loop=='yes' else None)
+                if loop=='no':self.assertEqual(node.get('fill'),'freeze')
+            positions,delays=timeline.gif_timeline('digital-rain',speed,loop)
+            self.assertEqual(sum(delays),seconds*1000)
+            self.assertLessEqual(len(positions),90)
+            self.assertEqual(positions[-1]==1,loop=='no')
+
+    def test_decoded_gifs_contain_motion_and_correct_completion(self):
+        c=dict(self.c,animation='digital-rain')
+        for loop in ['yes','no']:
+            path=self.path/('rain-'+loop+'.gif')
+            exporter.save_gif(self.fg,str(path),None,'digital-rain','normal',loop,c,self.grid)
+            with Image.open(path) as gif:
+                self.assertEqual(gif.info.get('loop'),0 if loop=='yes' else None)
+                frames=[];durations=[]
+                for i in range(gif.n_frames):
+                    gif.seek(i);frames.append(gif.convert('RGB'));durations.append(gif.info['duration'])
+            self.assertGreater(len({f.tobytes() for f in frames}),20)
+            self.assertEqual(sum(durations),5500)
+            self.assertIsNotNone(ImageChops.difference(frames[0],frames[len(frames)//2]).getbbox())
+            self.assertTrue(all(ImageChops.difference(a,b).getbbox() for a,b in zip(frames,frames[1:])))
+            if loop=='no':self.assert_same(frames[0],frames[-1])
+
+
+class TetrisTests(unittest.TestCase):
+    setUp = AnimationTests.setUp
+    assert_same = AnimationTests.assert_same
+
+    def config(self, **changes):
+        return dict(self.c, **dict(animation='tetris', **changes))
+
+    def test_partition_is_stable_contiguous_and_covers_each_cell_once(self):
+        c = self.config()
+        frozen = copy.deepcopy(self.grid)
+        plan = timeline.tetris_plan(c, self.grid)
+        self.assertEqual(plan, timeline.tetris_plan(c, self.grid))
+        faster = timeline.tetris_plan(dict(c, speed='fast'), self.grid)
+        self.assertEqual(plan.pieces, faster.pieces)
+        all_cells = []
+        for piece in plan.pieces:
+            self.assertTrue(1 <= len(piece.cells) <= 4)
+            connected = {piece.cells[0]}
+            while True:
+                more = {cell for cell in piece.cells if any(abs(cell[0]-a)+abs(cell[1]-b)==1 for a,b in connected)}
+                if more <= connected: break
+                connected |= more
+            self.assertEqual(connected, set(piece.cells))
+            all_cells.extend(piece.cells)
+            self.assertEqual(piece.offset(1), 0)
+            self.assertLess(20+(max(y for _,y in piece.cells)+1)*c['cell_h']+piece.offset(0), 0)
+            self.assertEqual(piece.times, tuple(sorted(set(piece.times))))
+            self.assertTrue(all(a<=b for a,b in zip(piece.offsets,piece.offsets[1:])))
+        self.assertEqual(sorted(all_cells), sorted((x,y) for y in range(c['rows']) for x in range(c['cols'])))
+        self.assertEqual(len(all_cells), len(set(all_cells)))
+        lower = [p.times[-2] for p in plan.pieces if min(y for _,y in p.cells)>=c['rows']//2]
+        upper = [p.times[-2] for p in plan.pieces if max(y for _,y in p.cells)<c['rows']//2]
+        self.assertLess(sum(lower)/len(lower), sum(upper)/len(upper))
+        self.assertEqual(self.grid,frozen)
+
+    def test_svg_uses_shared_vertical_trajectories_and_original_glyphs(self):
+        c = self.config()
+        plan = timeline.tetris_plan(c,self.grid)
+        root=ET.fromstring(renderer.render_svg(c,self.grid))
+        static=ET.fromstring(renderer.render_svg(dict(c,animation='instant'),self.grid))
+        def glyphs(svg):
+            return sorted((text.get('y'),span.get('x'),span.text,span.get('fill'),span.get('opacity'))
+                          for text in svg.findall('.//{*}text') for span in text.findall('{*}tspan'))
+        self.assertEqual(glyphs(root),glyphs(static))
+        self.assertEqual(len(root.findall('.//{*}text')), len(static.findall('.//{*}text')))
+        self.assertEqual(len(root.findall('{*}text')), len(root.findall('.//{*}text')))
+        self.assertFalse(root.findall('.//{*}g'))
+        self.assertFalse(root.findall('.//{*}animateTransform'))
+        ownership = {cell: piece for piece in plan.pieces for cell in piece.cells}
+        self.assertEqual(len(root.findall('.//{*}animate')), len(glyphs(static)))
+        for text in root.findall('{*}text'):
+            baseline = float(text.get('y'))
+            y = round((baseline - 20 - c['cell_h'] * .78) / c['cell_h'])
+            for span in text:
+                x = round((float(span.get('x')) - 20) / c['cell_w'])
+                piece = ownership[x, y]
+                self.assertEqual(len(span), 1)
+                node = span[0]
+                self.assertEqual(node.get('attributeName'), 'y')
+                times = list(map(float, node.get('keyTimes').split(';')))
+                values = list(map(float, node.get('values').split(';')))
+                self.assertEqual(len(times), len(piece.times))
+                for t, w in zip(times, piece.times): self.assertAlmostEqual(t, w, places=8)
+                for actual, dy in zip(values, piece.offsets):
+                    self.assertAlmostEqual(actual, baseline + dy, places=5)
+                self.assertEqual(values[-1], baseline)
+                for i in range(len(times)-1):
+                    midpoint = (piece.times[i]+piece.times[i+1])/2
+                    self.assertAlmostEqual(piece.offset(midpoint),
+                                           (values[i]+values[i+1])/2-baseline, places=5)
+
+    def test_raster_patches_preserve_pixels_and_only_translate_y(self):
+        c=self.config()
+        plan=timeline.tetris_plan(c,self.grid)
+        patches=exporter.tetris_patches(self.fg,c,plan)
+        rebuilt=Image.new('RGBA',self.fg.size)
+        for _,xy,patch_image in patches:
+            rebuilt.alpha_composite(patch_image,xy)
+        # Source-over may discard RGB under zero alpha. Compare coverage and
+        # visible colour on both backgrounds; the endpoint below is byte exact.
+        self.assertEqual(rebuilt.getchannel('A').tobytes(),self.fg.getchannel('A').tobytes())
+        for background in ['white', 'black']:
+            self.assertEqual(exporter.flatten_background(rebuilt,background).tobytes(),
+                             exporter.flatten_background(self.fg,background).tobytes())
+        original=self.fg.tobytes();frozen=copy.deepcopy(self.grid)
+        self.assertIsNone(exporter.apply_tetris(self.fg,c,self.grid,0).getbbox())
+        self.assertEqual(exporter.apply_tetris(self.fg,c,self.grid,1).tobytes(),original)
+        piece,xy,patch_image=next(p for p in patches if p[0].times[1]>.1)
+        # Isolate one rigid group and compare to its exact integer translation.
+        config=dict(c,_tetris_plan=plan,_tetris_patches=((piece,xy,patch_image),))
+        progress=piece.times[-2]-.01
+        expected=Image.new('RGBA',self.fg.size)
+        expected.alpha_composite(patch_image,(xy[0],xy[1]+round(piece.offset(progress))))
+        self.assertEqual(exporter.apply_tetris(self.fg,config,self.grid,progress).tobytes(),expected.tobytes())
+        self.assertEqual(self.fg.tobytes(),original);self.assertEqual(self.grid,frozen)
+
+    def test_timing_loop_restart_and_exact_completion(self):
+        for speed,loop,seconds in [('slow','yes',9.),('normal','no',5.5),('fast','yes',2.8)]:
+            c=self.config(speed=speed,loop=loop)
+            plan=timeline.tetris_plan(c,self.grid)
+            self.assertEqual((plan.seconds,plan.repeat),(seconds,loop=='yes'))
+            positions,delays=timeline.gif_timeline('tetris',speed,loop,plan)
+            self.assertEqual(sum(delays),seconds*1000)
+            self.assertEqual(positions[-1]==1,loop=='no')
+            first=exporter.make_gif_frame(self.fg,None,0,'tetris',c,self.grid)
+            self.assert_same(first,Image.new('RGB',self.fg.size,'white'))
+            self.assert_same(exporter.make_gif_frame(self.fg,None,1,'tetris',c,self.grid),self.static)
+            self.assert_same(first,exporter.make_gif_frame(self.fg,None,0,'tetris',c,self.grid))
+            self.assertIsNotNone(ImageChops.difference(first,exporter.make_gif_frame(self.fg,None,.5,'tetris',c,self.grid)).getbbox())
+
+    def test_decoded_tetris_final_equals_static_and_no_stale_pixels(self):
+        c=self.config()
+        path=self.path/'tetris.gif'
+        exporter.save_gif(self.fg,str(path),None,'tetris','normal','no',c,self.grid)
+        with Image.open(path) as gif:
+            palette=gif.copy()
+            self.assertNotIn('loop',gif.info)
+            self.assertGreater(gif.n_frames,15)
+            gif.seek(gif.n_frames-1)
+            expected=self.static.quantize(palette=palette,dither=Image.Dither.NONE).convert('RGB')
+            self.assert_same(gif.convert('RGB'),expected)
+        # Existing delta-frame test also validates every decoded Tetris frame.
 
 
 if __name__ == "__main__":
