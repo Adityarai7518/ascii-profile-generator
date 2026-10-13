@@ -145,11 +145,9 @@ Motion that assembles or sits behind the artwork.
 
 ## Sample
 
-`sample.png` is included as a quick example image.
+`sample.png` is the input image the examples above are generated from: source image → ASCII conversion → animation.
 
-`demo.gif` is included so visitors can see the idea immediately.
-
-![ASCII Profile Generator demo](demo.gif)
+<img src="./sample.png" width="320" alt="Sample input image" />
 
 ## Project structure
 
@@ -165,8 +163,7 @@ ascii-profile-generator/
 ├── requirements.txt
 ├── README.md
 ├── LICENSE
-├── sample.png
-└── demo.gif
+└── sample.png
 ```
 
 Generated files such as `avi-ascii.svg`, `avi-ascii.png`, `avi-ascii.jpg`, and `avi-ascii.gif` stay local and are ignored by Git.
