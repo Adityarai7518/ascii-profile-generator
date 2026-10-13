@@ -96,6 +96,53 @@ without animation support falls back to complete artwork. See the Mosaic section
 in [ANIMATION_CONTRACT.md](ANIMATION_CONTRACT.md) for implementation invariants.
 
 
+## Animation Showcase
+
+Every animation below is generated from the same `sample.png` at the production defaults
+(120 × 64, cell 8 × 15, contrast 1.10, brightness 1.00, gamma 1.00, `Original` mode) so the
+examples compare animation behavior directly.
+
+### Reveal
+
+Progressive reveals that uncover the finished artwork.
+
+| Row Reveal | Column Reveal | Diagonal Reveal | Iris Aperture | Circular Reveal |
+| --- | --- | --- | --- | --- |
+| ![Row Reveal](examples/animations/row-reveal.gif) | ![Column Reveal](examples/animations/column-reveal.gif) | ![Diagonal Reveal](examples/animations/diagonal-reveal.gif) | ![Iris Aperture](examples/animations/iris-aperture.gif) | ![Circular Reveal](examples/animations/circular-reveal.gif) |
+| Top to bottom | Left to right | Across a diagonal | Eight-sided aperture | Expanding circle |
+
+### Effects
+
+Treatments applied to the existing glyphs.
+
+| Fade In | Twinkle | Sparkle Wave | Typewriter | Dissolve |
+| --- | --- | --- | --- | --- |
+| ![Fade In](examples/animations/fade-in.gif) | ![Twinkle](examples/animations/twinkle.gif) | ![Sparkle Wave](examples/animations/sparkle-wave.gif) | ![Typewriter](examples/animations/typewriter.gif) | ![Dissolve](examples/animations/dissolve.gif) |
+| Whole image fades in | Shimmer on existing glyphs | Travelling shimmer band | Builds line by line | Scattered groups assemble |
+
+### Dynamic
+
+Motion that assembles or sits behind the artwork.
+
+| Digital Rain | Tetris | Mosaic |
+| --- | --- | --- |
+| ![Digital Rain](examples/animations/digital-rain.gif) | ![Tetris](examples/animations/tetris.gif) | ![Mosaic](examples/animations/mosaic.gif) |
+| Falling character streams | Falling pieces lock in | Tile apertures open |
+
+### Static
+
+| Instant |
+| --- |
+| ![Instant](examples/animations/instant.gif) |
+| Complete artwork, no animation |
+
+### Special
+
+| Flag Wave |
+| --- |
+| ![Flag Wave](examples/animations/flag-wave.gif) |
+| Vertical strips wave from a fixed hoist edge |
+
 ## Sample
 
 `sample.png` is included as a quick example image.
