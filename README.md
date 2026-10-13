@@ -1,157 +1,100 @@
 # ASCII Profile Generator
 
-Export ASCII art as script-free animated SVG, PNG, JPEG, or GIF.
+I built this tool to turn images into customizable ASCII art. You can tweak the characters, colors, size, contrast, and animation, then export the result as SVG, PNG, JPEG, or GIF.
 
-The goal is simple: install Python, run the setup, choose your settings, and get the file you asked for.
+## Sample
 
-## Try it
+The project ships with `sample.png`, the input image used to generate every example below.
 
-A sample image is included so you can test the project immediately.
+<img src="./sample.png" width="320" alt="Sample input image" />
 
-### macOS / Linux
+The idea is simple: **input image → ASCII artwork → optional animation or export.**
+
+## Features
+
+- Customizable ASCII character ramp (density)
+- Image size and cell size controls
+- Brightness, contrast, and gamma adjustments
+- Color modes and custom palettes
+- Export to SVG, PNG, JPEG, or GIF
+- 15 animation styles
+- A GitHub Profile preset
+
+## Quick start
+
+Install and run on the included sample:
 
 ```bash
 python3 setup.py
 python3 ascii_generator.py sample.png
 ```
 
-### Windows
+On Windows, use `py` instead of `python3`. `setup.py` sets up a virtual environment and installs the one dependency, Pillow. From there the CLI walks you through color, size, animation, and output format.
 
-```text
-py setup.py
-py ascii_generator.py sample.png
-```
+## Animation showcase
 
-`setup.py` creates the virtual environment and installs the only Python dependency automatically.
-
-## Color & Theme
-
-```text
-1. Original    - preserve source colours
-2. Light       - white background + black ASCII
-3. Dark        - black background + white ASCII
-4. Custom      - choose foreground + background
-5. Multicolour - choose palette + background
-6. Additional
-```
-
-When `Original` is selected:
-
-```text
-Background
-1. Preserve Transparent (if available)
-2. Original
-3. White
-4. Black
-5. Custom HEX
-```
-
-`Original` is the default. `Preserve Transparent (if available)` keeps the ASCII canvas transparent; opaque source regions are represented by the glyphs. The separate `Original` background choice infers a solid border colour for an opaque source.
-
-## Output Format
-
-```text
-1. SVG  - Script-free animated vector output
-2. PNG  - Static raster image output
-3. JPEG - Static raster image output
-4. GIF  - Animated raster image output
-```
-
-The format is selected during the same configuration flow. The program does not create an extra export stage and does not generate unused formats.
-
-## Animations
-
-The normal menu has 14 animations. Choices 1–9 retain their numbers; 10 is Typewriter, 11 Dissolve, 12 Digital Rain, 13 Tetris, and 14 Mosaic. Flag Wave remains under `Additional`.
-
-| Animation | Visual behavior | Loop behavior |
-| --- | --- | --- |
-| Row Reveal | Uncover from top to bottom | Reveal, hold, close when looping |
-| Column Reveal | Uncover from left to right | Reveal, hold, close when looping |
-| Diagonal Reveal | Accumulate a diagonal reveal across the image | Reveal, hold, close when looping |
-| Iris Aperture | Open an eight-sided aperture | Reveal, hold, close when looping |
-| Circular Reveal | Expand a circular opening | Reveal, hold, close when looping |
-| Fade In | Fade the complete artwork into view | Reveal, hold, close when looping |
-| Twinkle | Subtly strengthen selected existing glyph coverage, then restore it | Repeat only when requested |
-| Sparkle Wave | Move a subtle opacity band across existing glyphs | Repeat only when requested |
-| Instant | Display the complete artwork immediately | Never loops; one GIF frame |
-| Typewriter | Build each line from left to right, in reading order | Reveal, hold, close when looping |
-| Dissolve | Assemble deterministic scattered groups of characters | Reveal, hold, dissolve away when looping |
-| Digital Rain | Sparse falling ASCII backdrop behind unchanged artwork | Repeat only when requested |
-| Tetris | Falling ASCII pieces assemble the artwork | Repeat only when requested |
-| Mosaic | Geometric tile apertures uncover stationary ASCII artwork | Reveal, hold, close when looping |
-| Flag Wave | Move vertical strips with a fixed hoist edge | Always loops |
-
-All animations support all colour modes. The Flag workflow offers Original and Black & White themes. Twinkle and Sparkle Wave preserve the original characters; they do not add random symbols. Non-looping reveals finish at the complete static image. Ambient effects return to the original intensity; Flag intentionally keeps moving.
-
-Slow, Normal, and Fast use 9, 5.5, and 2.8 seconds per cycle. Flag Wave has a minimum 4-second cycle. Instant ignores speed. Looping reveals spend 65% of the cycle revealing, 15% holding the complete image, and 20% closing. GIF delays use whole hundredths of a second; identical frames may be combined without changing the total duration. SVG animation is continuous. PNG and JPEG are static regardless of the animation selection.
-
-SVG and PNG keep a transparent canvas when background is `none`, including for opaque source photos. Choose `Original` to infer a solid colour from an opaque source's border. JPEG and GIF flatten a transparent canvas to white. GIF uses a shared 256-colour palette and a maximum 640-pixel edge; SVG/Pillow font rasterization and GIF palette reduction can differ visually.
-
-Mosaic (option 14) uses at most 512 deterministic rectangular tiles. Each aperture
-expands from its center over one unchanged artwork layer: glyphs never move or
-change colour. SVG and GIF share one geometry/timing plan. Non-looping completion
-is the static artwork; looping completion holds before the apertures close.
-The matte covers canvas padding and preserves translucent glyph coverage. SVG
-without animation support falls back to complete artwork. See the Mosaic section
-in [ANIMATION_CONTRACT.md](ANIMATION_CONTRACT.md) for implementation invariants.
-
-
-## Animation Showcase
-
-Every animation below is generated from the same `sample.png` at the production defaults
-(120 × 64, cell 8 × 15, contrast 1.10, brightness 1.00, gamma 1.00, `Original` mode) so the
-examples compare animation behavior directly.
+Every GIF below comes from the same `sample.png`, so you can compare the styles directly.
 
 ### Reveal
-
-Progressive reveals that uncover the finished artwork.
 
 | Row Reveal | Column Reveal | Diagonal Reveal | Iris Aperture | Circular Reveal |
 | --- | --- | --- | --- | --- |
 | ![Row Reveal](examples/animations/row-reveal.gif) | ![Column Reveal](examples/animations/column-reveal.gif) | ![Diagonal Reveal](examples/animations/diagonal-reveal.gif) | ![Iris Aperture](examples/animations/iris-aperture.gif) | ![Circular Reveal](examples/animations/circular-reveal.gif) |
-| Top to bottom | Left to right | Across a diagonal | Eight-sided aperture | Expanding circle |
+
+- **Row Reveal** · Builds the image from top to bottom.
+- **Column Reveal** · Builds it from left to right.
+- **Diagonal Reveal** · Uncovers across a diagonal.
+- **Iris Aperture** · Opens an eight-sided aperture.
+- **Circular Reveal** · Expands a circular opening.
 
 ### Effects
-
-Treatments applied to the existing glyphs.
 
 | Fade In | Twinkle | Sparkle Wave | Typewriter | Dissolve |
 | --- | --- | --- | --- | --- |
 | ![Fade In](examples/animations/fade-in.gif) | ![Twinkle](examples/animations/twinkle.gif) | ![Sparkle Wave](examples/animations/sparkle-wave.gif) | ![Typewriter](examples/animations/typewriter.gif) | ![Dissolve](examples/animations/dissolve.gif) |
-| Whole image fades in | Shimmer on existing glyphs | Travelling shimmer band | Builds line by line | Scattered groups assemble |
+
+- **Fade In** · Fades the whole image into view.
+- **Twinkle** · Adds subtle animated highlights.
+- **Sparkle Wave** · Moves a soft shimmer across the glyphs.
+- **Typewriter** · Types the image out line by line.
+- **Dissolve** · Assembles the image from scattered groups.
 
 ### Dynamic
-
-Motion that assembles or sits behind the artwork.
 
 | Digital Rain | Tetris | Mosaic |
 | --- | --- | --- |
 | ![Digital Rain](examples/animations/digital-rain.gif) | ![Tetris](examples/animations/tetris.gif) | ![Mosaic](examples/animations/mosaic.gif) |
-| Falling character streams | Falling pieces lock in | Tile apertures open |
 
-### Static
+- **Digital Rain** · Adds falling streams around the artwork.
+- **Tetris** · Reconstructs the image with falling blocks.
+- **Mosaic** · Opens tiles that uncover the artwork.
 
-| Instant |
-| --- |
-| ![Instant](examples/animations/instant.gif) |
-| Complete artwork, no animation |
+### Static & Special
 
-### Special
+| Instant | Flag Wave |
+| --- | --- |
+| ![Instant](examples/animations/instant.gif) | ![Flag Wave](examples/animations/flag-wave.gif) |
 
-| Flag Wave |
-| --- |
-| ![Flag Wave](examples/animations/flag-wave.gif) |
-| Vertical strips wave from a fixed hoist edge |
+- **Instant** · Shows the complete artwork with no animation.
+- **Flag Wave** · Gives the artwork a waving flag effect.
 
-## Sample
+## Color modes
 
-`sample.png` is the input image the examples above are generated from: source image → ASCII conversion → animation.
+Pick how the ASCII art is colored:
 
-<img src="./sample.png" width="320" alt="Sample input image" />
+- **Original** · keep the source colors
+- **Light** · white background, black characters
+- **Dark** · black background, white characters
+- **Custom** · choose your own foreground and background
+- **Multicolour** · supply a palette
+
+With `Original`, you can keep the canvas transparent (SVG and PNG) or flatten it to a background color. JPEG and GIF always use a solid background.
+
+## GitHub Profile preset
+
+A preset is included for creating ASCII art sized for a GitHub profile README. It starts you at Original colors on a transparent background, Twinkle animation set to loop, a 100 × 50 grid, and SVG output. These are just starting points — press `e` at the confirmation prompt to change anything before generating.
 
 ## Project structure
-
-Everything needed for the repository lives in the root directory:
 
 ```text
 ascii-profile-generator/
@@ -161,34 +104,14 @@ ascii-profile-generator/
 ├── animations.py
 ├── setup.py
 ├── requirements.txt
-├── README.md
-├── LICENSE
-└── sample.png
+├── sample.png
+├── examples/
+│   └── animations/
+└── tests/
 ```
 
-Generated files such as `avi-ascii.svg`, `avi-ascii.png`, `avi-ascii.jpg`, and `avi-ascii.gif` stay local and are ignored by Git.
-
-## GitHub Profile Preset
-
-The CLI now includes a **GitHub Profile** preset that configures the generator specifically for creating ASCII artwork suitable for a GitHub profile README.
-
-**What it does:**
-It automatically pre-fills the configuration with sensible defaults designed for GitHub's Markdown interface and steps you directly to the generation prompt.
-
-**Default Starting Settings:**
-* **Theme/Color:** Original source colours with a Transparent background
-* **Animation:** Twinkle
-* **Loop:** Yes
-* **Dimensions:** 100 × 50 columns/rows (a README-oriented starting size that can be customized)
-* **Output Format:** SVG (scalable, animated, and lightweight)
-
-**Customization:**
-The preset does NOT permanently override your normal defaults; it only provides starting values for the current generation. You are entirely free to customize these settings afterward. If you want to change the format to PNG, resize the grid, or use a different theme, simply press `e` (edit) at the confirmation prompt to step backwards and adjust the configuration.
-
-## GitHub profile picture
-
-For a GitHub profile picture (the avatar in your account settings), PNG or JPEG is the most practical output. The project generates the image locally; it does not change your account automatically.
+Run the tests with `python3 -m unittest discover`.
 
 ## License
 
-See [LICENSE](LICENSE).
+Released under the [MIT License](LICENSE).

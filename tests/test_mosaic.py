@@ -91,7 +91,7 @@ class MosaicPlanTests(unittest.TestCase):
         code = ('import animations, json; from dataclasses import asdict; '
                 f'print(json.dumps(asdict(animations.mosaic_plan({config(7,9)!r}, [])), sort_keys=True))')
         outputs = [subprocess.check_output([sys.executable, '-c', code],
-                   cwd=Path(__file__).parent,
+                   cwd=Path(__file__).parent.parent,
                    env=dict(os.environ, PYTHONHASHSEED=seed, PYTHONDONTWRITEBYTECODE='1'))
                    for seed in ['1', '27', 'random']]
         self.assertEqual(len(set(outputs)), 1)

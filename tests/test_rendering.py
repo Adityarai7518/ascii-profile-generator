@@ -68,7 +68,7 @@ class RenderingTests(unittest.TestCase):
             self.assertEqual(renderer.density_to_index(i / (len(ramp) - 1), ramp), i)
 
     def test_sample_missing_forehead_cell_has_sparse_ink(self):
-        config = dict(self.config, src=str(Path(__file__).parent / "sample.png"),
+        config = dict(self.config, src=str(Path(__file__).parent.parent / "sample.png"),
                       cols=120, rows=64, cell_w=8, cell_h=15, contrast=1.1)
         grid = renderer.build_grid(config)
         self.assertEqual(config["ramp"][grid[11][54]["index"]], ".")
